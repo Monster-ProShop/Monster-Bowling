@@ -6,46 +6,91 @@
     <title>Monster Bowling | Manager</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap');
-        body { font-family: 'Outfit', sans-serif; background-color: #f8fafc; }
-        .glass-panel { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); }
-        .tab-active { border-bottom: 4px solid #a3e635; color: #0f172a; font-weight: 900; }
-        .tab-inactive { border-bottom: 4px solid transparent; color: #64748b; font-weight: 700; }
-        .section-hidden { display: none; }
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;900&display=swap');
         
-        /* Bracket Visuals */
-        .bracket-wrapper { display: flex; flex-direction: row; gap: 2rem; overflow-x: auto; padding-bottom: 1rem; align-items: stretch; }
-        .bracket-column { display: flex; flex-direction: column; justify-content: space-around; width: 220px; flex-shrink: 0; gap: 1rem; }
-        .match-group { background: #f1f5f9; padding: 0.375rem; border-radius: 0.75rem; border: 1px solid #e2e8f0; display: flex; flex-direction: column; gap: 0.375rem; min-height: 50px; justify-content: center; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02); }
-        .player-slot { background: white; border: 1px solid #cbd5e1; padding: 0.5rem 0.75rem; font-size: 0.85rem; border-radius: 0.5rem; display: flex; justify-content: space-between; font-weight: 700; transition: all 0.2s ease; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
-        .player-slot.winner { background-color: #f0fdf4; border-color: #86efac; color: #166534; box-shadow: 0 2px 4px rgba(134, 239, 172, 0.2); }
-        .player-slot.champion { background: linear-gradient(to right, #fef08a, #facc15); border-color: #ca8a04; color: #713f12; font-size: 1.1rem; text-align: center; justify-content: center; padding: 1rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        :root {
+            --crimson: #7a141b;
+            --crimson-dark: #5c0f14;
+            --gold: #d4af37;
+            --gold-light: #facc15;
+            --charcoal: #0f172a;
+            --sapphire: #1e293b;
+            --bg-light: #fdfbf7;
+        }
+
+        body { font-family: 'Outfit', sans-serif; background-color: var(--bg-light); color: var(--charcoal); }
+        
+        /* Navigation Tabs */
+        .tab-btn { background-color: var(--sapphire); color: white; border: 2px solid var(--sapphire); transition: all 0.2s ease; }
+        .tab-active { border-color: var(--gold); font-weight: 900; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+        .tab-inactive { opacity: 0.8; font-weight: 600; }
+        .tab-inactive:hover { opacity: 1; border-color: #475569; }
+        .section-hidden { display: none; }
+
+        /* Tournament Bracket CSS */
+        .bracket-container { display: flex; flex-direction: row; gap: 0; overflow-x: auto; padding: 1rem 0; align-items: stretch; }
+        .bracket-column { display: flex; flex-direction: column; justify-content: space-around; width: 220px; flex-shrink: 0; position: relative; padding: 0 1rem; }
+        
+        /* Connector Lines */
+        .bracket-column::after { content: ''; position: absolute; right: 0; top: 25%; bottom: 25%; width: 2px; background-color: var(--gold); z-index: 0; display: none; }
+        .col-g1::after, .col-g2::after { display: block; }
+        
+        .match-group { position: relative; display: flex; flex-direction: column; gap: 4px; z-index: 10; margin: 10px 0; }
+        
+        /* Horizontal stems from matches */
+        .match-group::before { content: ''; position: absolute; right: -1rem; top: 50%; width: 1rem; height: 2px; background-color: var(--gold); z-index: 0; }
+        .col-finals .match-group::before { display: none; }
+        .match-group::after { content: ''; position: absolute; left: -1rem; top: 50%; width: 1rem; height: 2px; background-color: var(--gold); z-index: 0; }
+        .col-g1 .match-group::after { display: none; }
+
+        /* Player Slots */
+        .player-slot { background: var(--crimson); color: white; border: 1px solid var(--crimson-dark); border-radius: 4px; display: flex; overflow: hidden; font-size: 0.85rem; font-weight: 700; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+        .player-name { padding: 0.4rem 0.5rem; flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; }
+        .player-score { background: var(--gold); color: var(--charcoal); width: 35px; text-align: center; padding: 0.4rem 0; font-weight: 900; border-left: 1px solid var(--crimson-dark); }
+        
+        /* Winners & Champions */
+        .player-slot.winner .player-score { background: var(--gold-light); }
+        .player-slot.champion { background: var(--crimson); border: 3px solid var(--gold); padding: 1rem; flex-direction: column; text-align: center; font-size: 1.1rem; border-radius: 6px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        .player-slot.champion .player-name { padding: 0; margin-bottom: 0.25rem; font-size: 0.75rem; color: var(--gold); letter-spacing: 1px; }
+        .player-slot.champion .player-score { background: transparent; color: white; width: auto; border: none; font-size: 1.2rem; }
+        
+        /* Pending/Tie Box */
+        .pending-box { background: var(--crimson); color: rgba(255,255,255,0.7); border: 1px dashed var(--gold); border-radius: 4px; padding: 0.75rem; text-align: center; font-size: 0.8rem; font-style: italic; }
+
+        /* Custom Inputs */
+        .gold-input { border: 2px solid #e2e8f0; transition: all 0.2s; }
+        .gold-input:focus { border-color: var(--gold); outline: none; box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.2); }
     </style>
 </head>
-<body class="text-slate-800 antialiased min-h-screen pb-12">
+<body class="antialiased min-h-screen pb-12">
 
-    <!-- Header -->
-    <header class="bg-slate-900 text-white pt-6 pb-2 shadow-xl border-b-4 border-lime-400">
-        <div class="max-w-7xl mx-auto px-6 flex flex-col items-center">
-            <svg width="120" height="80" viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg" class="drop-shadow-lg mb-2">
-                <circle cx="100" cy="70" r="45" fill="#06b6d4" stroke="#ffffff" stroke-width="4"/>
-                <circle cx="85" cy="55" r="8" fill="#ffffff"/><circle cx="85" cy="55" r="3" fill="#0f172a"/>
-                <circle cx="115" cy="55" r="8" fill="#ffffff"/><circle cx="115" cy="55" r="3" fill="#0f172a"/>
-                <circle cx="100" cy="85" r="10" fill="#0f172a"/>
-                <path d="M 65 40 Q 40 10 70 20 Z" fill="#a3e635"/>
-                <path d="M 135 40 Q 160 10 130 20 Z" fill="#a3e635"/>
-                <path d="M 10 70 L 45 70 M 20 50 L 55 50 M 20 90 L 55 90" stroke="#a3e635" stroke-width="4" stroke-linecap="round"/>
-            </svg>
-            <h1 class="text-3xl font-black tracking-wider uppercase bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-lime-400">
-                Monster Bowling
-            </h1>
-            <p class="text-slate-400 text-sm font-medium mt-1">Tournament Management Dashboard</p>
+    <!-- Header & Navigation -->
+    <header class="bg-[#fdfbf7] pt-6 pb-4 border-b-2 border-slate-200">
+        <div class="max-w-7xl mx-auto px-6">
+            <div class="flex justify-between items-center mb-6">
+                <div class="flex items-center gap-4">
+                    <!-- Stylized Logo Placeholder matching Option 3 -->
+                    <svg width="60" height="60" viewBox="0 0 100 100" class="drop-shadow-md">
+                        <path d="M10,20 L30,20 L30,40 L10,40 Z M70,20 L90,20 L90,40 L70,40 Z M30,40 L70,40 L50,80 Z" fill="#7a141b" stroke="#d4af37" stroke-width="4" stroke-linejoin="round"/>
+                        <circle cx="40" cy="50" r="4" fill="#0f172a"/>
+                        <circle cx="60" cy="50" r="4" fill="#0f172a"/>
+                    </svg>
+                    <div>
+                        <h1 class="text-3xl font-black tracking-widest text-[#0f172a] uppercase flex items-center gap-2">
+                            MONSTER BOWLING <span class="text-[#d4af37] font-light">/ MANAGER</span>
+                        </h1>
+                    </div>
+                </div>
+                <button onclick="generateAllBrackets()" class="bg-[#7a141b] hover:bg-[#5c0f14] text-white font-bold px-6 py-3 rounded border-b-4 border-[#5c0f14] active:border-b-0 active:translate-y-1 transition-all">
+                    GENERATE ALL BRACKETS
+                </button>
+            </div>
             
-            <div class="flex space-x-8 mt-6">
-                <button onclick="switchTab('setup')" id="tab-setup" class="tab-active pb-2 transition-all">1. Config</button>
-                <button onclick="switchTab('roster')" id="tab-roster" class="tab-inactive pb-2 transition-all">2. Roster</button>
-                <button onclick="switchTab('brackets')" id="tab-brackets" class="tab-inactive pb-2 transition-all">3. Brackets</button>
-                <button onclick="switchTab('scoring')" id="tab-scoring" class="tab-inactive pb-2 transition-all">4. Scoring</button>
+            <div class="grid grid-cols-4 gap-4">
+                <button onclick="switchTab('setup')" id="tab-setup" class="tab-btn tab-active py-3 rounded shadow uppercase tracking-wide text-sm">1. Configuration</button>
+                <button onclick="switchTab('roster')" id="tab-roster" class="tab-btn tab-inactive py-3 rounded shadow uppercase tracking-wide text-sm">2. Roster</button>
+                <button onclick="switchTab('brackets')" id="tab-brackets" class="tab-btn tab-inactive py-3 rounded shadow uppercase tracking-wide text-sm">3. Brackets</button>
+                <button onclick="switchTab('scoring')" id="tab-scoring" class="tab-btn tab-inactive py-3 rounded shadow uppercase tracking-wide text-sm">4. Scoring</button>
             </div>
         </div>
     </header>
@@ -53,66 +98,55 @@
     <main class="max-w-7xl mx-auto px-6 mt-8">
         
         <!-- SECTION 1: CONFIGURATION -->
-        <section id="sec-setup" class="glass-panel p-8 rounded-2xl shadow-xl border border-slate-200">
-            <h2 class="text-2xl font-bold text-slate-800 mb-6 border-b-2 border-cyan-400 pb-2">Event Configuration & Payouts</h2>
+        <section id="sec-setup" class="bg-white p-8 rounded shadow-lg border border-slate-200">
+            <h2 class="text-2xl font-black text-[#7a141b] mb-6 border-b-2 border-[#d4af37] pb-2 uppercase tracking-wide">Event Configuration</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div class="bg-slate-50 p-4 rounded-xl border">
-                    <h3 class="font-bold text-cyan-600 mb-2">HDCP Brackets (8)</h3>
+                <!-- Config Cards -->
+                <div class="bg-slate-50 p-5 rounded border border-slate-200 shadow-sm">
+                    <h3 class="font-black text-[#0f172a] mb-3 uppercase">HDCP Brackets (8)</h3>
                     <label class="block text-xs font-bold text-slate-500 uppercase">Buy-in ($)</label>
-                    <input type="number" id="cfgHdcpBuyin" value="10" class="w-full px-3 py-2 mt-1 rounded border-slate-300">
-                    <label class="block text-xs font-bold text-slate-500 uppercase mt-3">1st Place %</label>
-                    <input type="number" id="cfgHdcp1st" value="62.5" class="w-full px-3 py-2 mt-1 rounded border-slate-300">
-                    <label class="block text-xs font-bold text-slate-500 uppercase mt-3">2nd Place %</label>
-                    <input type="number" id="cfgHdcp2nd" value="25" class="w-full px-3 py-2 mt-1 rounded border-slate-300">
+                    <input type="number" id="cfgHdcpBuyin" value="10" class="gold-input w-full px-3 py-2 mt-1 rounded bg-white">
                 </div>
-                <div class="bg-slate-50 p-4 rounded-xl border">
-                    <h3 class="font-bold text-blue-600 mb-2">Scratch Brackets (8)</h3>
+                <div class="bg-slate-50 p-5 rounded border border-slate-200 shadow-sm">
+                    <h3 class="font-black text-[#0f172a] mb-3 uppercase">Scratch Brackets (8)</h3>
                     <label class="block text-xs font-bold text-slate-500 uppercase">Buy-in ($)</label>
-                    <input type="number" id="cfgScratchBuyin" value="10" class="w-full px-3 py-2 mt-1 rounded border-slate-300">
-                    <label class="block text-xs font-bold text-slate-500 uppercase mt-3">1st Place %</label>
-                    <input type="number" id="cfgScratch1st" value="62.5" class="w-full px-3 py-2 mt-1 rounded border-slate-300">
-                    <label class="block text-xs font-bold text-slate-500 uppercase mt-3">2nd Place %</label>
-                    <input type="number" id="cfgScratch2nd" value="25" class="w-full px-3 py-2 mt-1 rounded border-slate-300">
+                    <input type="number" id="cfgScratchBuyin" value="10" class="gold-input w-full px-3 py-2 mt-1 rounded bg-white">
                 </div>
-                <div class="bg-slate-50 p-4 rounded-xl border">
-                    <h3 class="font-bold text-orange-500 mb-2">High Game Pot</h3>
+                <div class="bg-slate-50 p-5 rounded border border-slate-200 shadow-sm">
+                    <h3 class="font-black text-[#0f172a] mb-3 uppercase">High Game Pot</h3>
                     <label class="block text-xs font-bold text-slate-500 uppercase">Buy-in ($)</label>
-                    <input type="number" id="cfgHighGameBuyin" value="20" class="w-full px-3 py-2 mt-1 rounded border-slate-300">
+                    <input type="number" id="cfgHighGameBuyin" value="20" class="gold-input w-full px-3 py-2 mt-1 rounded bg-white">
                 </div>
-                <div class="bg-slate-50 p-4 rounded-xl border">
-                    <h3 class="font-bold text-purple-500 mb-2">Quiniela</h3>
+                <div class="bg-slate-50 p-5 rounded border border-slate-200 shadow-sm">
+                    <h3 class="font-black text-[#0f172a] mb-3 uppercase">Quiniela</h3>
                     <label class="block text-xs font-bold text-slate-500 uppercase">Buy-in ($)</label>
-                    <input type="number" id="cfgQuinielaBuyin" value="50" class="w-full px-3 py-2 mt-1 rounded border-slate-300">
-                    <label class="block text-xs font-bold text-slate-500 uppercase mt-3">Game Payout %</label>
-                    <input type="number" id="cfgQuinielaGame" value="20" class="w-full px-3 py-2 mt-1 rounded border-slate-300">
-                    <label class="block text-xs font-bold text-slate-500 uppercase mt-3">Series Payout %</label>
-                    <input type="number" id="cfgQuinielaSeries" value="40" class="w-full px-3 py-2 mt-1 rounded border-slate-300">
+                    <input type="number" id="cfgQuinielaBuyin" value="50" class="gold-input w-full px-3 py-2 mt-1 rounded bg-white">
                 </div>
             </div>
         </section>
 
         <!-- SECTION 2: ROSTER MANAGEMENT -->
-        <section id="sec-roster" class="glass-panel p-8 rounded-2xl shadow-xl border border-slate-200 section-hidden">
-            <h2 class="text-2xl font-bold text-slate-800 mb-6 border-b-2 border-lime-400 pb-2">Bowler Roster</h2>
+        <section id="sec-roster" class="bg-white p-8 rounded shadow-lg border border-slate-200 section-hidden">
+            <h2 class="text-2xl font-black text-[#7a141b] mb-6 border-b-2 border-[#d4af37] pb-2 uppercase tracking-wide">Bowler Roster</h2>
             
-            <form id="addBowlerForm" class="bg-slate-100 p-4 rounded-xl mb-8 flex flex-wrap gap-4 items-end border border-slate-200">
+            <form id="addBowlerForm" class="bg-slate-50 p-5 rounded mb-8 flex flex-wrap gap-4 items-end border border-slate-200 shadow-sm">
                 <div class="flex-1 min-w-[200px]">
                     <label class="block text-xs font-bold text-slate-500 uppercase">Name</label>
-                    <input type="text" id="addName" required class="w-full px-3 py-2 mt-1 rounded border-slate-300">
+                    <input type="text" id="addName" required class="gold-input w-full px-3 py-2 mt-1 rounded">
                 </div>
                 <div class="w-24">
                     <label class="block text-xs font-bold text-slate-500 uppercase">HDCP</label>
-                    <input type="number" id="addHdcp" required value="0" min="0" class="w-full px-3 py-2 mt-1 rounded border-slate-300">
+                    <input type="number" id="addHdcp" required value="0" min="0" class="gold-input w-full px-3 py-2 mt-1 rounded">
                 </div>
                 <div class="w-32">
                     <label class="block text-xs font-bold text-slate-500 uppercase"># HDCP Brkts</label>
-                    <input type="number" id="addHdcpCount" value="0" min="0" class="w-full px-3 py-2 mt-1 rounded border-slate-300">
+                    <input type="number" id="addHdcpCount" value="0" min="0" class="gold-input w-full px-3 py-2 mt-1 rounded">
                 </div>
                 <div class="w-32">
                     <label class="block text-xs font-bold text-slate-500 uppercase"># Scr Brkts</label>
-                    <input type="number" id="addScratchCount" value="0" min="0" class="w-full px-3 py-2 mt-1 rounded border-slate-300">
+                    <input type="number" id="addScratchCount" value="0" min="0" class="gold-input w-full px-3 py-2 mt-1 rounded">
                 </div>
-                <button type="submit" class="bg-lime-500 hover:bg-lime-600 text-slate-900 font-bold px-6 py-2 mt-1 rounded shadow h-[42px]">
+                <button type="submit" class="bg-[#d4af37] hover:bg-[#c29b2b] text-[#0f172a] font-black px-6 py-2 mt-1 rounded shadow h-[42px] transition-colors">
                     + ADD
                 </button>
             </form>
@@ -120,15 +154,15 @@
             <div class="overflow-x-auto">
                 <table class="w-full text-left border-collapse">
                     <thead>
-                        <tr class="border-b-2 border-slate-200 text-slate-500 text-sm uppercase">
-                            <th class="py-3 px-4">Bowler Name</th>
+                        <tr class="border-b-2 border-slate-200 text-slate-500 text-xs uppercase tracking-wider bg-slate-50">
+                            <th class="py-3 px-4 rounded-tl">Bowler Name</th>
                             <th class="py-3 px-4">HDCP</th>
                             <th class="py-3 px-4">HDCP Brackets</th>
                             <th class="py-3 px-4">Scratch Brackets</th>
-                            <th class="py-3 px-4">Action</th>
+                            <th class="py-3 px-4 rounded-tr">Action</th>
                         </tr>
                     </thead>
-                    <tbody id="rosterTableBody" class="text-slate-700 font-medium">
+                    <tbody id="rosterTableBody" class="text-[#0f172a] font-medium">
                         <!-- Filled by JS -->
                     </tbody>
                 </table>
@@ -136,51 +170,56 @@
         </section>
 
         <!-- SECTION 3: BRACKET GENERATION -->
-        <section id="sec-brackets" class="glass-panel p-8 rounded-2xl shadow-xl border border-slate-200 section-hidden">
-            <div class="flex justify-between items-center mb-6 border-b-2 border-cyan-400 pb-2">
-                <h2 class="text-2xl font-bold text-slate-800">Generated Brackets</h2>
-                <button onclick="generateAllBrackets()" class="bg-cyan-500 hover:bg-cyan-600 text-white font-bold px-6 py-2 rounded shadow transition-colors">
-                    GENERATE ALL BRACKETS
-                </button>
+        <section id="sec-brackets" class="bg-white rounded shadow-lg border border-slate-200 section-hidden overflow-hidden">
+            <!-- Header Bar matching mockup -->
+            <div class="bg-[#7a141b] text-white text-center py-3 font-black text-xl tracking-widest uppercase shadow-inner">
+                Brackets
             </div>
             
-            <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
-                <div>
-                    <h3 class="text-xl font-black text-slate-800 mb-4 bg-slate-100 p-3 rounded-lg text-center border shadow-sm">HDCP Brackets</h3>
-                    <div id="hdcpBracketDisplay" class="space-y-6">
-                        <p class="text-slate-500 italic text-center">No brackets generated yet.</p>
+            <div class="grid grid-cols-1 xl:grid-cols-2 divide-x divide-slate-200">
+                <div class="p-6 bg-[#fdfbf7]">
+                    <div class="bg-slate-200 text-[#0f172a] text-center py-2 font-black uppercase text-sm mb-6 rounded">HDCP Brackets</div>
+                    <div id="hdcpBracketDisplay" class="space-y-10">
+                        <p class="text-slate-500 italic text-center text-sm">No brackets generated yet.</p>
                     </div>
                 </div>
-                <div>
-                    <h3 class="text-xl font-black text-slate-800 mb-4 bg-slate-100 p-3 rounded-lg text-center border shadow-sm">Scratch Brackets</h3>
-                    <div id="scratchBracketDisplay" class="space-y-6">
-                        <p class="text-slate-500 italic text-center">No brackets generated yet.</p>
+                <div class="p-6 bg-[#fdfbf7]">
+                    <div class="bg-slate-200 text-[#0f172a] text-center py-2 font-black uppercase text-sm mb-6 rounded">Scratch Brackets</div>
+                    <div id="scratchBracketDisplay" class="space-y-10">
+                        <p class="text-slate-500 italic text-center text-sm">No brackets generated yet.</p>
                     </div>
                 </div>
+            </div>
+            
+            <!-- Tie Break Rule Footer -->
+            <div class="bg-slate-100 border-t border-slate-200 p-3 text-center">
+                <p class="text-xs text-slate-500 font-medium uppercase tracking-wide">
+                    <strong>Tie Break Rule:</strong> If a match is tied, all tied players advance to the next game for resolution.
+                </p>
             </div>
         </section>
 
         <!-- SECTION 4: SCORING -->
-        <section id="sec-scoring" class="glass-panel p-8 rounded-2xl shadow-xl border border-slate-200 section-hidden">
-            <div class="flex justify-between items-center mb-6 border-b-2 border-purple-400 pb-2">
-                <h2 class="text-2xl font-bold text-slate-800">Central Scoring (Alphabetical)</h2>
-                <button onclick="calculateWinners()" class="bg-slate-900 text-lime-400 hover:text-lime-300 font-bold px-8 py-2 rounded-lg shadow-lg transition-colors">
+        <section id="sec-scoring" class="bg-white p-8 rounded shadow-lg border border-slate-200 section-hidden">
+            <div class="flex justify-between items-center mb-6 border-b-2 border-[#d4af37] pb-2">
+                <h2 class="text-2xl font-black text-[#7a141b] uppercase tracking-wide">Central Scoring</h2>
+                <button onclick="calculateWinners()" class="bg-[#0f172a] text-[#d4af37] hover:text-white font-black px-8 py-2 rounded shadow transition-colors">
                     UPDATE COMPETITIONS
                 </button>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-left border-collapse">
                     <thead>
-                        <tr class="border-b-2 border-slate-200 text-slate-500 text-sm uppercase bg-slate-50">
-                            <th class="py-3 px-4">Bowler Name (HDCP)</th>
-                            <th class="py-3 px-2 w-28">Game 1</th>
-                            <th class="py-3 px-2 w-28">Game 2</th>
-                            <th class="py-3 px-2 w-28">Game 3</th>
-                            <th class="py-3 px-2 w-28">Series (Scr)</th>
-                            <th class="py-3 px-2 w-28">Series (Hdcp)</th>
+                        <tr class="border-b-2 border-slate-200 text-slate-500 text-xs uppercase tracking-wider bg-slate-50">
+                            <th class="py-3 px-4 rounded-tl">Bowler Name (HDCP)</th>
+                            <th class="py-3 px-2 w-28 text-center">Game 1</th>
+                            <th class="py-3 px-2 w-28 text-center">Game 2</th>
+                            <th class="py-3 px-2 w-28 text-center">Game 3</th>
+                            <th class="py-3 px-2 w-28 text-center">Series (Scr)</th>
+                            <th class="py-3 px-2 w-28 text-center rounded-tr">Series (Hdcp)</th>
                         </tr>
                     </thead>
-                    <tbody id="scoringTableBody" class="text-slate-700 font-bold text-lg">
+                    <tbody id="scoringTableBody" class="text-[#0f172a] font-bold text-lg">
                         <!-- Filled by JS -->
                     </tbody>
                 </table>
