@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monster Bowling | Tournament Registration</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap');
+        body { font-family: 'Outfit', sans-serif; background-color: #f8fafc; }
+        .glass-panel { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); }
+    </style>
+</head>
+<body class="text-slate-800 antialiased min-h-screen pb-12">
+
+    <!-- Header & Logo -->
+    <header class="bg-slate-900 text-white py-8 shadow-xl border-b-4 border-lime-400">
+        <div class="max-w-4xl mx-auto px-6 flex flex-col items-center">
+            <!-- Custom Monster Bowling SVG Logo -->
+            <svg width="180" height="120" viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg" class="drop-shadow-lg mb-4">
+                <!-- Bowling Ball Body -->
+                <circle cx="100" cy="70" r="45" fill="#06b6d4" stroke="#ffffff" stroke-width="4"/>
+                <!-- Finger Holes (Monster Eyes/Nose) -->
+                <circle cx="85" cy="55" r="8" fill="#ffffff"/>
+                <circle cx="85" cy="55" r="3" fill="#0f172a"/>
+                <circle cx="115" cy="55" r="8" fill="#ffffff"/>
+                <circle cx="115" cy="55" r="3" fill="#0f172a"/>
+                <circle cx="100" cy="85" r="10" fill="#0f172a"/> <!-- Mouth/Thumb hole -->
+                <!-- Monster Horns -->
+                <path d="M 65 40 Q 40 10 70 20 Z" fill="#a3e635"/>
+                <path d="M 135 40 Q 160 10 130 20 Z" fill="#a3e635"/>
+                <!-- Speed lines -->
+                <path d="M 10 70 L 45 70 M 20 50 L 55 50 M 20 90 L 55 90" stroke="#a3e635" stroke-width="4" stroke-linecap="round"/>
+            </svg>
+            <h1 class="text-4xl font-black tracking-wider uppercase bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-lime-400">
+                Monster Bowling
+            </h1>
+            <p class="text-slate-300 font-medium mt-2">Elite Tournament Registration</p>
+        </div>
+    </header>
+
+    <main class="max-w-4xl mx-auto px-6 mt-10">
+        <form id="registrationForm" class="space-y-8 glass-panel p-8 rounded-2xl shadow-xl border border-slate-200">
+            
+            <!-- 1. Bowler Info -->
+            <section>
+                <h2 class="text-2xl font-bold text-slate-800 mb-4 border-b-2 border-cyan-400 pb-2">1. Bowler Profile</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label class="block text-sm font-bold text-slate-600 mb-1">Full Name</label>
+                        <input type="text" required class="w-full px-4 py-3 rounded-lg border-slate-300 shadow-sm focus:border-cyan-500 focus:ring-cyan-500 bg-slate-50" placeholder="John Doe">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-slate-600 mb-1">Entering Average</label>
+                        <input type="number" id="enteringAverage" required min="0" max="300" class="w-full px-4 py-3 rounded-lg border-slate-300 shadow-sm focus:border-cyan-500 focus:ring-cyan-500 bg-slate-50" placeholder="210">
+                    </div>
+                </div>
+            </section>
+
+            <!-- 2. Brackets -->
+            <section>
+                <h2 class="text-2xl font-bold text-slate-800 mb-4 border-b-2 border-lime-400 pb-2">2. Action & Brackets</h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <!-- HDCP Brackets -->
+                    <div class="bg-slate-50 p-6 rounded-xl border border-slate-200">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-lg font-bold text-slate-700">HDCP Brackets (Groups of 8)</h3>
+                            <input type="checkbox" id="hdcpToggle" class="w-5 h-5 text-lime-500 rounded focus:ring-lime-500">
+                        </div>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 uppercase">Buy-in ($)</label>
+                                <input type="number" id="hdcpBuyIn" value="10" class="w-full px-3 py-2 mt-1 rounded-lg border-slate-300">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 uppercase">HDCP Used</label>
+                                <input type="number" placeholder="Calculated automatically..." readonly class="w-full px-3 py-2 mt-1 rounded-lg bg-slate-200 text-slate-500 cursor-not-allowed">
+                            </div>
+                            <div class="bg-slate-900 text-white p-4 rounded-lg mt-4">
+                                <p class="text-sm font-bold text-lime-400 mb-2">Projected Payouts</p>
+                                <div class="flex justify-between text-sm">
+                                    <span>1st Place (62.5%):</span>
+                                    <span id="hdcpFirst" class="font-bold text-cyan-400">$0</span>
+                                </div>
+                                <div class="flex justify-between text-sm mt-1">
+                                    <span>2nd Place (25%):</span>
+                                    <span id="hdcpSecond" class="font-bold text-cyan-400">$0</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Scratch Brackets & High Game -->
+                    <div class="space-y-6">
+                        <div class="bg-slate-50 p-6 rounded-xl border border-slate-200">
+                            <div class="flex items-center justify-between mb-4">
+                                <h3 class="text-lg font-bold text-slate-700">Scratch Brackets</h3>
+                                <input type="checkbox" class="w-5 h-5 text-cyan-500 rounded focus:ring-cyan-500">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 uppercase">Buy-in ($)</label>
+                                <input type="number" class="w-full px-3 py-2 mt-1 rounded-lg border-slate-300">
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-50 p-6 rounded-xl border border-slate-200 flex items-center justify-between">
+                            <div>
+                                <h3 class="text-lg font-bold text-slate-700">High Game Pot</h3>
+                                <p class="text-xs text-slate-500 mt-1">Optional side pot entry</p>
+                            </div>
+                            <input type="checkbox" class="w-6 h-6 text-cyan-500 rounded focus:ring-cyan-500">
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 3. Quiniela Configuration -->
+            <section>
+                <h2 class="text-2xl font-bold text-slate-800 mb-4 border-b-2 border-purple-400 pb-2">3. Quiniela Setup</h2>
+                <div class="bg-purple-50 p-6 rounded-xl border border-purple-100">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div>
+                            <label class="block text-sm font-bold text-slate-600 mb-1">Total Buy-in ($)</label>
+                            <input type="number" id="quinielaBuyIn" class="w-full px-4 py-3 rounded-lg border-purple-200 focus:border-purple-500 focus:ring-purple-500 bg-white">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-slate-600 mb-1">Payout Per Game</label>
+                            <div class="relative">
+                                <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">%</span>
+                                <input type="number" placeholder="e.g. 20" class="w-full pl-8 pr-4 py-3 rounded-lg border-purple-200 focus:border-purple-500 bg-white">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-slate-600 mb-1">Payout Per Series</label>
+                             <div class="relative">
+                                <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">%</span>
+                                <input type="number" placeholder="e.g. 40" class="w-full pl-8 pr-4 py-3 rounded-lg border-purple-200 focus:border-purple-500 bg-white">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <div class="pt-6">
+                <button type="submit" class="w-full bg-gradient-to-r from-cyan-500 to-lime-500 hover:from-cyan-600 hover:to-lime-600 text-slate-900 font-black text-xl py-4 rounded-xl shadow-lg transform transition hover:-translate-y-1">
+                    CONFIRM REGISTRATION
+                </button>
+            </div>
+        </form>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>
