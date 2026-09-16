@@ -17,7 +17,6 @@ function switchTab(tabId) {
 
     if (tabId === 'scoring') renderScoringTable();
     if (tabId === 'brackets') {
-        // Re-render brackets to ensure scores are visually updated if switching tabs
         renderBrackets(brackets.hdcp, 'hdcpBracketDisplay', 'HDCP', 'hdcp');
         renderBrackets(brackets.scratch, 'scratchBracketDisplay', 'Scratch', 'scratch');
     }
@@ -37,7 +36,7 @@ document.getElementById('addBowlerForm').addEventListener('submit', (e) => {
     
     bowlers.push(newBowler);
     e.target.reset();
-    document.getElementById('addName').focus(); // Keep focus for rapid entry
+    document.getElementById('addName').focus(); 
     renderRoster();
 });
 
@@ -88,7 +87,6 @@ function buildBrackets(countProperty) {
     let generatedBrackets = [];
 
     while (true) {
-        // Sort descending so bowlers needing the most brackets are seated first
         pool.sort((a, b) => b.remaining - a.remaining);
         let available = pool.filter(b => b.remaining > 0);
         
@@ -100,7 +98,6 @@ function buildBrackets(countProperty) {
             available[i].remaining--; 
         }
         
-        // Shuffle to ensure randomized matchups in Game 1
         shuffleArray(selectedForBracket);
         generatedBrackets.push(selectedForBracket);
     }
@@ -113,15 +110,48 @@ function getBowlerScore(id, gameNum, type) {
     let b = bowlers.find(x => x.id === id);
     if (!b) return 0;
     let score = b.scores[`g${gameNum}`] || 0;
-    // Apply handicap if it's an HDCP bracket and they actually bowled a score > 0
     if (type === 'hdcp' && score > 0) score += b.hdcp;
     return score;
+}
+
+// Tie-breaker evaluator: Returns ALL players who tie for the highest score in a specific match
+function getWinners(players, gameNum, type) {
+    if (!players || players.length === 0) return [];
+    
+    // Map players to their scores for this specific game
+    let scoredPlayers = players.map(p => ({ p, score: getBowlerScore(p.id, gameNum, type) }));
+    
+    // Find the max score among the group
+    let maxScore = Math.max(...scoredPlayers.map(sp => sp.score));
+    
+    // If the max score is 0, we assume the game hasn't been played yet (pending)
+    if (maxScore === 0) return []; 
+    
+    // Return all players who tied the max score
+    return scoredPlayers.filter(sp => sp.score === maxScore).map(sp => sp.p);
+}
+
+// Visual HTML builder for a match group container
+function renderMatch(players, gameNum, winners, type) {
+    if (players.length === 0) {
+        return `<div class="match-group"><div class="text-xs text-slate-400 font-medium text-center py-2 italic">Pending...</div></div>`;
+    }
+    return `
+        <div class="match-group shadow-sm">
+            ${players.map(p => `
+                <div class="player-slot ${winners.some(w => w.id === p.id) ? 'winner' : ''}">
+                    <span class="truncate pr-2">${p.name}</span>
+                    <span class="text-slate-400 font-black">${getBowlerScore(p.id, gameNum, type) || '-'}</span>
+                </div>
+            `).join('')}
+        </div>
+    `;
 }
 
 function renderBrackets(bracketList, elementId, titlePrefix, type) {
     const container = document.getElementById(elementId);
     if (bracketList.length === 0) {
-        container.innerHTML = `<p class="text-slate-500 italic text-center py-4">Not enough entries to form an 8-person bracket.</p>`;
+        container.innerHTML = `<p class="text-slate-500 italic text-center py-4 border rounded-xl bg-slate-50">Not enough entries to form an 8-person bracket.</p>`;
         return;
     }
 
@@ -129,72 +159,71 @@ function renderBrackets(bracketList, elementId, titlePrefix, type) {
     
     bracketList.forEach((bracket, index) => {
         let r1 = bracket; 
-        let r2 = [];      
-        let r3 = [];      
-        let champ = null; 
+        
+        // Define Game 1 Matches (Head-to-head)
+        let m1 = [r1[0], r1[1]];
+        let m2 = [r1[2], r1[3]];
+        let m3 = [r1[4], r1[5]];
+        let m4 = [r1[6], r1[7]];
 
-        // Round 2 Advancements (From Game 1)
-        for(let i = 0; i < 8; i += 2) {
-            let s1 = getBowlerScore(r1[i].id, 1, type);
-            let s2 = getBowlerScore(r1[i+1].id, 1, type);
-            let winner = (s1 < s2 && s2 > 0) ? r1[i+1] : r1[i]; 
-            r2.push(winner);
-        }
+        // Evaluate Game 1 Winners (Multiple can advance if they tie)
+        let m1_w = getWinners(m1, 1, type);
+        let m2_w = getWinners(m2, 1, type);
+        let m3_w = getWinners(m3, 1, type);
+        let m4_w = getWinners(m4, 1, type);
 
-        // Round 3 Advancements (From Game 2)
-        for(let i = 0; i < 4; i += 2) {
-            let s1 = getBowlerScore(r2[i].id, 2, type);
-            let s2 = getBowlerScore(r2[i+1].id, 2, type);
-            let winner = (s1 < s2 && s2 > 0) ? r2[i+1] : r2[i];
-            r3.push(winner);
-        }
+        // Define Game 2 Matches (Top bracket half vs Bottom bracket half)
+        let m5 = [...m1_w, ...m2_w];
+        let m6 = [...m3_w, ...m4_w];
 
-        // Champion (From Game 3)
-        let sF1 = getBowlerScore(r3[0].id, 3, type);
-        let sF2 = getBowlerScore(r3[1].id, 3, type);
-        champ = (sF1 < sF2 && sF2 > 0) ? r3[1] : r3[0];
+        // Evaluate Game 2 Winners
+        let m5_w = getWinners(m5, 2, type);
+        let m6_w = getWinners(m6, 2, type);
+
+        // Define Game 3 Match (Finals)
+        let m7 = [...m5_w, ...m6_w];
+        
+        // Evaluate Champion(s)
+        let champs = getWinners(m7, 3, type);
 
         // Build the HTML Tree
         html += `
-        <div class="border border-slate-200 rounded-xl p-4 bg-white shadow-sm overflow-hidden">
-            <h4 class="font-black text-slate-700 text-md mb-4 bg-slate-100 py-1 px-3 rounded inline-block border">${titlePrefix} Bracket #${index + 1}</h4>
+        <div class="border border-slate-200 rounded-2xl p-5 bg-white shadow-sm overflow-hidden mb-8">
+            <div class="flex items-center justify-between mb-4 border-b pb-3">
+                <h4 class="font-black text-slate-800 text-lg uppercase">${titlePrefix} Bracket #${index + 1}</h4>
+            </div>
             
             <div class="bracket-wrapper">
-                <!-- Quarterfinals (Game 1) -->
-                <div class="bracket-column gap-1">
-                    ${r1.map(p => `
-                        <div class="player-slot ${r2.some(w => w.id === p.id) && getBowlerScore(p.id, 1, type) > 0 ? 'winner' : ''}">
-                            <span class="truncate pr-2">${p.name}</span>
-                            <span class="text-slate-400 font-medium">${getBowlerScore(p.id, 1, type) || '-'}</span>
-                        </div>
-                    `).join('')}
+                <!-- Game 1 -->
+                <div class="bracket-column">
+                    <div class="text-xs font-bold text-slate-400 uppercase text-center tracking-wider">Game 1</div>
+                    ${renderMatch(m1, 1, m1_w, type)}
+                    ${renderMatch(m2, 1, m2_w, type)}
+                    ${renderMatch(m3, 1, m3_w, type)}
+                    ${renderMatch(m4, 1, m4_w, type)}
                 </div>
 
-                <!-- Semifinals (Game 2) -->
-                <div class="bracket-column justify-around">
-                    ${r2.map(p => `
-                        <div class="player-slot ${r3.some(w => w.id === p.id) && getBowlerScore(p.id, 2, type) > 0 ? 'winner' : ''}">
-                            <span class="truncate pr-2">${p.name}</span>
-                            <span class="text-slate-400 font-medium">${getBowlerScore(p.id, 2, type) || '-'}</span>
-                        </div>
-                    `).join('')}
+                <!-- Game 2 -->
+                <div class="bracket-column">
+                    <div class="text-xs font-bold text-slate-400 uppercase text-center tracking-wider">Game 2</div>
+                    ${renderMatch(m5, 2, m5_w, type)}
+                    ${renderMatch(m6, 2, m6_w, type)}
                 </div>
 
-                <!-- Finals (Game 3) -->
-                <div class="bracket-column justify-around">
-                    ${r3.map(p => `
-                        <div class="player-slot ${champ.id === p.id && getBowlerScore(p.id, 3, type) > 0 ? 'winner' : ''}">
-                            <span class="truncate pr-2">${p.name}</span>
-                            <span class="text-slate-400 font-medium">${getBowlerScore(p.id, 3, type) || '-'}</span>
-                        </div>
-                    `).join('')}
+                <!-- Game 3 (Finals) -->
+                <div class="bracket-column justify-center">
+                    <div class="text-xs font-bold text-slate-400 uppercase text-center tracking-wider">Game 3</div>
+                    ${renderMatch(m7, 3, champs, type)}
                 </div>
 
-                <!-- Winner -->
-                <div class="bracket-column justify-center pl-2">
-                    <div class="text-[10px] font-bold text-slate-400 uppercase text-center mb-1 tracking-wider">Champion</div>
-                    <div class="player-slot champion">
-                        ${getBowlerScore(champ.id, 3, type) > 0 ? champ.name : 'TBD'}
+                <!-- Champion -->
+                <div class="bracket-column justify-center">
+                    <div class="text-xs font-bold text-slate-400 uppercase text-center mb-1 tracking-wider">Champion</div>
+                    <div class="match-group bg-amber-50 border-amber-200">
+                        ${champs.length > 0 
+                            ? champs.map(c => `<div class="player-slot champion">${c.name}</div>`).join('')
+                            : `<div class="player-slot text-slate-400 justify-center">TBD</div>`
+                        }
                     </div>
                 </div>
             </div>
@@ -210,7 +239,6 @@ function renderScoringTable() {
     const tbody = document.getElementById('scoringTableBody');
     tbody.innerHTML = '';
     
-    // Sort bowlers alphabetically for the scoring sheet
     let sortedBowlers = [...bowlers].sort((a, b) => a.name.localeCompare(b.name));
     
     sortedBowlers.forEach(b => {
@@ -223,9 +251,9 @@ function renderScoringTable() {
                     <span class="text-slate-800">${b.name}</span>
                     <span class="bg-lime-100 text-lime-800 text-xs px-2 py-0.5 rounded-full font-bold">+${b.hdcp}</span>
                 </td>
-                <td class="py-2 px-2"><input type="number" onchange="updateScore('${b.id}', 'g1', this.value)" value="${b.scores.g1 || ''}" class="w-20 px-2 py-2 border rounded-lg text-center bg-white shadow-inner focus:ring-2 focus:ring-lime-400 outline-none"></td>
-                <td class="py-2 px-2"><input type="number" onchange="updateScore('${b.id}', 'g2', this.value)" value="${b.scores.g2 || ''}" class="w-20 px-2 py-2 border rounded-lg text-center bg-white shadow-inner focus:ring-2 focus:ring-lime-400 outline-none"></td>
-                <td class="py-2 px-2"><input type="number" onchange="updateScore('${b.id}', 'g3', this.value)" value="${b.scores.g3 || ''}" class="w-20 px-2 py-2 border rounded-lg text-center bg-white shadow-inner focus:ring-2 focus:ring-lime-400 outline-none"></td>
+                <td class="py-2 px-2"><input type="number" onchange="updateScore('${b.id}', 'g1', this.value)" value="${b.scores.g1 || ''}" class="w-20 px-2 py-2 border rounded-lg text-center bg-white shadow-inner focus:ring-2 focus:ring-lime-400 outline-none font-bold"></td>
+                <td class="py-2 px-2"><input type="number" onchange="updateScore('${b.id}', 'g2', this.value)" value="${b.scores.g2 || ''}" class="w-20 px-2 py-2 border rounded-lg text-center bg-white shadow-inner focus:ring-2 focus:ring-lime-400 outline-none font-bold"></td>
+                <td class="py-2 px-2"><input type="number" onchange="updateScore('${b.id}', 'g3', this.value)" value="${b.scores.g3 || ''}" class="w-20 px-2 py-2 border rounded-lg text-center bg-white shadow-inner focus:ring-2 focus:ring-lime-400 outline-none font-bold"></td>
                 <td class="py-3 px-2 text-slate-400">${scrSeries > 0 ? scrSeries : '-'}</td>
                 <td class="py-3 px-2 text-lime-600 font-black">${scrSeries > 0 ? hdcpSeries : '-'}</td>
             </tr>
@@ -241,11 +269,8 @@ function updateScore(id, game, val) {
 }
 
 function calculateWinners() {
-    renderScoringTable(); // Update the series totals in the table
-    // Re-render brackets to visually show the advancements based on the new scores
+    renderScoringTable(); 
     renderBrackets(brackets.hdcp, 'hdcpBracketDisplay', 'HDCP', 'hdcp');
     renderBrackets(brackets.scratch, 'scratchBracketDisplay', 'Scratch', 'scratch');
-    
-    // Switch to brackets tab automatically to view results
     switchTab('brackets');
 }
