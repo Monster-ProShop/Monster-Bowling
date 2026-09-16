@@ -12,13 +12,20 @@
         .tab-active { border-bottom: 4px solid #a3e635; color: #0f172a; font-weight: 900; }
         .tab-inactive { border-bottom: 4px solid transparent; color: #64748b; font-weight: 700; }
         .section-hidden { display: none; }
+        
+        /* Bracket Visuals */
+        .bracket-wrapper { display: flex; flex-direction: row; gap: 1.5rem; overflow-x: auto; padding-bottom: 1rem; }
+        .bracket-column { display: flex; flex-direction: column; justify-content: space-around; width: 180px; flex-shrink: 0; }
+        .player-slot { background: white; border: 1px solid #cbd5e1; padding: 0.5rem; font-size: 0.85rem; border-radius: 6px; display: flex; justify-content: space-between; font-weight: 700; box-shadow: 0 1px 2px rgba(0,0,0,0.05); margin: 0.25rem 0; transition: all 0.2s ease; }
+        .player-slot.winner { background-color: #f0fdf4; border-color: #86efac; color: #166534; }
+        .player-slot.champion { background: linear-gradient(to right, #fef08a, #facc15); border-color: #ca8a04; color: #713f12; font-size: 1rem; text-align: center; justify-content: center; padding: 1rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
     </style>
 </head>
 <body class="text-slate-800 antialiased min-h-screen pb-12">
 
     <!-- Header -->
     <header class="bg-slate-900 text-white pt-6 pb-2 shadow-xl border-b-4 border-lime-400">
-        <div class="max-w-6xl mx-auto px-6 flex flex-col items-center">
+        <div class="max-w-7xl mx-auto px-6 flex flex-col items-center">
             <svg width="120" height="80" viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg" class="drop-shadow-lg mb-2">
                 <circle cx="100" cy="70" r="45" fill="#06b6d4" stroke="#ffffff" stroke-width="4"/>
                 <circle cx="85" cy="55" r="8" fill="#ffffff"/><circle cx="85" cy="55" r="3" fill="#0f172a"/>
@@ -43,7 +50,7 @@
         </div>
     </header>
 
-    <main class="max-w-6xl mx-auto px-6 mt-8">
+    <main class="max-w-7xl mx-auto px-6 mt-8">
         
         <!-- SECTION 1: CONFIGURATION -->
         <section id="sec-setup" class="glass-panel p-8 rounded-2xl shadow-xl border border-slate-200">
@@ -88,7 +95,6 @@
         <section id="sec-roster" class="glass-panel p-8 rounded-2xl shadow-xl border border-slate-200 section-hidden">
             <h2 class="text-2xl font-bold text-slate-800 mb-6 border-b-2 border-lime-400 pb-2">Bowler Roster</h2>
             
-            <!-- Add Bowler Form -->
             <form id="addBowlerForm" class="bg-slate-100 p-4 rounded-xl mb-8 flex flex-wrap gap-4 items-end border border-slate-200">
                 <div class="flex-1 min-w-[200px]">
                     <label class="block text-xs font-bold text-slate-500 uppercase">Name</label>
@@ -111,7 +117,6 @@
                 </button>
             </form>
 
-            <!-- Roster Table -->
             <div class="overflow-x-auto">
                 <table class="w-full text-left border-collapse">
                     <thead>
@@ -134,21 +139,21 @@
         <section id="sec-brackets" class="glass-panel p-8 rounded-2xl shadow-xl border border-slate-200 section-hidden">
             <div class="flex justify-between items-center mb-6 border-b-2 border-cyan-400 pb-2">
                 <h2 class="text-2xl font-bold text-slate-800">Generated Brackets</h2>
-                <button onclick="generateAllBrackets()" class="bg-cyan-500 hover:bg-cyan-600 text-white font-bold px-6 py-2 rounded shadow">
+                <button onclick="generateAllBrackets()" class="bg-cyan-500 hover:bg-cyan-600 text-white font-bold px-6 py-2 rounded shadow transition-colors">
                     GENERATE ALL BRACKETS
                 </button>
             </div>
             
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div>
-                    <h3 class="text-xl font-bold text-slate-700 mb-4 bg-slate-100 p-2 rounded text-center">HDCP Brackets</h3>
-                    <div id="hdcpBracketDisplay" class="space-y-4">
+                    <h3 class="text-xl font-bold text-slate-700 mb-4 bg-slate-100 p-3 rounded-lg text-center border">HDCP Brackets</h3>
+                    <div id="hdcpBracketDisplay" class="space-y-6">
                         <p class="text-slate-500 italic text-center">No brackets generated yet.</p>
                     </div>
                 </div>
                 <div>
-                    <h3 class="text-xl font-bold text-slate-700 mb-4 bg-slate-100 p-2 rounded text-center">Scratch Brackets</h3>
-                    <div id="scratchBracketDisplay" class="space-y-4">
+                    <h3 class="text-xl font-bold text-slate-700 mb-4 bg-slate-100 p-3 rounded-lg text-center border">Scratch Brackets</h3>
+                    <div id="scratchBracketDisplay" class="space-y-6">
                         <p class="text-slate-500 italic text-center">No brackets generated yet.</p>
                     </div>
                 </div>
@@ -157,28 +162,28 @@
 
         <!-- SECTION 4: SCORING -->
         <section id="sec-scoring" class="glass-panel p-8 rounded-2xl shadow-xl border border-slate-200 section-hidden">
-            <h2 class="text-2xl font-bold text-slate-800 mb-6 border-b-2 border-purple-400 pb-2">Central Scoring (Alphabetical)</h2>
+            <div class="flex justify-between items-center mb-6 border-b-2 border-purple-400 pb-2">
+                <h2 class="text-2xl font-bold text-slate-800">Central Scoring (Alphabetical)</h2>
+                <button onclick="calculateWinners()" class="bg-slate-900 text-lime-400 hover:text-lime-300 font-bold px-8 py-2 rounded-lg shadow-lg transition-colors">
+                    UPDATE COMPETITIONS
+                </button>
+            </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-left border-collapse">
                     <thead>
                         <tr class="border-b-2 border-slate-200 text-slate-500 text-sm uppercase bg-slate-50">
                             <th class="py-3 px-4">Bowler Name (HDCP)</th>
-                            <th class="py-3 px-2 w-24">Game 1</th>
-                            <th class="py-3 px-2 w-24">Game 2</th>
-                            <th class="py-3 px-2 w-24">Game 3</th>
-                            <th class="py-3 px-2 w-24">Series (Scr)</th>
-                            <th class="py-3 px-2 w-24">Series (Hdcp)</th>
+                            <th class="py-3 px-2 w-28">Game 1</th>
+                            <th class="py-3 px-2 w-28">Game 2</th>
+                            <th class="py-3 px-2 w-28">Game 3</th>
+                            <th class="py-3 px-2 w-28">Series (Scr)</th>
+                            <th class="py-3 px-2 w-28">Series (Hdcp)</th>
                         </tr>
                     </thead>
                     <tbody id="scoringTableBody" class="text-slate-700 font-bold text-lg">
                         <!-- Filled by JS -->
                     </tbody>
                 </table>
-            </div>
-            <div class="mt-6 flex justify-end">
-                <button onclick="calculateWinners()" class="bg-slate-900 text-lime-400 hover:text-lime-300 font-bold px-8 py-3 rounded-lg shadow-lg">
-                    UPDATE COMPETITIONS
-                </button>
             </div>
         </section>
     </main>

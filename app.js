@@ -16,6 +16,11 @@ function switchTab(tabId) {
     document.getElementById(`tab-${tabId}`).className = 'tab-active pb-2 transition-all';
 
     if (tabId === 'scoring') renderScoringTable();
+    if (tabId === 'brackets') {
+        // Re-render brackets to ensure scores are visually updated if switching tabs
+        renderBrackets(brackets.hdcp, 'hdcpBracketDisplay', 'HDCP', 'hdcp');
+        renderBrackets(brackets.scratch, 'scratchBracketDisplay', 'Scratch', 'scratch');
+    }
 }
 
 // --- ROSTER MANAGEMENT ---
@@ -32,6 +37,7 @@ document.getElementById('addBowlerForm').addEventListener('submit', (e) => {
     
     bowlers.push(newBowler);
     e.target.reset();
+    document.getElementById('addName').focus(); // Keep focus for rapid entry
     renderRoster();
 });
 
@@ -52,77 +58,159 @@ function renderRoster() {
                 <td class="py-3 px-4 text-cyan-600 font-bold">${b.hdcpCount}</td>
                 <td class="py-3 px-4 text-blue-600 font-bold">${b.scratchCount}</td>
                 <td class="py-3 px-4">
-                    <button onclick="removeBowler('${b.id}')" class="text-red-500 hover:text-red-700 text-sm font-bold">X REMOVE</button>
+                    <button onclick="removeBowler('${b.id}')" class="text-red-500 hover:text-red-700 text-sm font-bold bg-red-50 px-2 py-1 rounded">X REMOVE</button>
                 </td>
             </tr>
         `;
     });
 }
 
-// --- BRACKET GENERATOR (Greedy Algorithm) ---
+// --- BRACKET GENERATOR (Greedy + Random Shuffle) ---
+function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+}
+
 function generateAllBrackets() {
     brackets.hdcp = buildBrackets('hdcpCount');
     brackets.scratch = buildBrackets('scratchCount');
     
-    renderBrackets(brackets.hdcp, 'hdcpBracketDisplay', 'HDCP Bracket');
-    renderBrackets(brackets.scratch, 'scratchBracketDisplay', 'Scratch Bracket');
+    renderBrackets(brackets.hdcp, 'hdcpBracketDisplay', 'HDCP', 'hdcp');
+    renderBrackets(brackets.scratch, 'scratchBracketDisplay', 'Scratch', 'scratch');
 }
 
 function buildBrackets(countProperty) {
-    // 1. Create a pool tracking how many brackets each bowler still needs
     let pool = bowlers.map(b => ({ id: b.id, name: b.name, remaining: b[countProperty] }))
                       .filter(b => b.remaining > 0);
     
     let generatedBrackets = [];
 
-    // 2. Loop until we can no longer form a full 8-person bracket
     while (true) {
-        // Sort pool descending by remaining requested brackets. 
-        // This distributes heavy players first to avoid collisions.
+        // Sort descending so bowlers needing the most brackets are seated first
         pool.sort((a, b) => b.remaining - a.remaining);
-        
-        // Filter out anyone who has 0 remaining entries
         let available = pool.filter(b => b.remaining > 0);
         
-        // If we don't have 8 distinct players left, we must stop mathematically.
         if (available.length < 8) break; 
         
-        let newBracket = [];
-        // Pull the top 8 distinct players for this bracket
+        let selectedForBracket = [];
         for (let i = 0; i < 8; i++) {
-            newBracket.push({ id: available[i].id, name: available[i].name });
-            available[i].remaining--; // Decrement their requested count
+            selectedForBracket.push({ id: available[i].id, name: available[i].name });
+            available[i].remaining--; 
         }
         
-        generatedBrackets.push(newBracket);
+        // Shuffle to ensure randomized matchups in Game 1
+        shuffleArray(selectedForBracket);
+        generatedBrackets.push(selectedForBracket);
     }
     
     return generatedBrackets;
 }
 
-function renderBrackets(bracketList, elementId, titlePrefix) {
+// --- VISUAL BRACKET RENDERER & SCORING ---
+function getBowlerScore(id, gameNum, type) {
+    let b = bowlers.find(x => x.id === id);
+    if (!b) return 0;
+    let score = b.scores[`g${gameNum}`] || 0;
+    // Apply handicap if it's an HDCP bracket and they actually bowled a score > 0
+    if (type === 'hdcp' && score > 0) score += b.hdcp;
+    return score;
+}
+
+function renderBrackets(bracketList, elementId, titlePrefix, type) {
     const container = document.getElementById(elementId);
     if (bracketList.length === 0) {
-        container.innerHTML = `<p class="text-slate-500 italic text-center">No brackets generated or not enough entries for 8 players.</p>`;
+        container.innerHTML = `<p class="text-slate-500 italic text-center py-4">Not enough entries to form an 8-person bracket.</p>`;
         return;
     }
 
-    container.innerHTML = bracketList.map((bracket, index) => `
-        <div class="border border-slate-200 rounded-lg p-3 bg-white shadow-sm mb-4">
-            <h4 class="font-bold text-slate-800 border-b pb-1 mb-2">${titlePrefix} #${index + 1}</h4>
-            <ol class="list-decimal list-inside text-sm text-slate-600 grid grid-cols-2 gap-1">
-                ${bracket.map(player => `<li>${player.name}</li>`).join('')}
-            </ol>
+    let html = '';
+    
+    bracketList.forEach((bracket, index) => {
+        let r1 = bracket; 
+        let r2 = [];      
+        let r3 = [];      
+        let champ = null; 
+
+        // Round 2 Advancements (From Game 1)
+        for(let i = 0; i < 8; i += 2) {
+            let s1 = getBowlerScore(r1[i].id, 1, type);
+            let s2 = getBowlerScore(r1[i+1].id, 1, type);
+            let winner = (s1 < s2 && s2 > 0) ? r1[i+1] : r1[i]; 
+            r2.push(winner);
+        }
+
+        // Round 3 Advancements (From Game 2)
+        for(let i = 0; i < 4; i += 2) {
+            let s1 = getBowlerScore(r2[i].id, 2, type);
+            let s2 = getBowlerScore(r2[i+1].id, 2, type);
+            let winner = (s1 < s2 && s2 > 0) ? r2[i+1] : r2[i];
+            r3.push(winner);
+        }
+
+        // Champion (From Game 3)
+        let sF1 = getBowlerScore(r3[0].id, 3, type);
+        let sF2 = getBowlerScore(r3[1].id, 3, type);
+        champ = (sF1 < sF2 && sF2 > 0) ? r3[1] : r3[0];
+
+        // Build the HTML Tree
+        html += `
+        <div class="border border-slate-200 rounded-xl p-4 bg-white shadow-sm overflow-hidden">
+            <h4 class="font-black text-slate-700 text-md mb-4 bg-slate-100 py-1 px-3 rounded inline-block border">${titlePrefix} Bracket #${index + 1}</h4>
+            
+            <div class="bracket-wrapper">
+                <!-- Quarterfinals (Game 1) -->
+                <div class="bracket-column gap-1">
+                    ${r1.map(p => `
+                        <div class="player-slot ${r2.some(w => w.id === p.id) && getBowlerScore(p.id, 1, type) > 0 ? 'winner' : ''}">
+                            <span class="truncate pr-2">${p.name}</span>
+                            <span class="text-slate-400 font-medium">${getBowlerScore(p.id, 1, type) || '-'}</span>
+                        </div>
+                    `).join('')}
+                </div>
+
+                <!-- Semifinals (Game 2) -->
+                <div class="bracket-column justify-around">
+                    ${r2.map(p => `
+                        <div class="player-slot ${r3.some(w => w.id === p.id) && getBowlerScore(p.id, 2, type) > 0 ? 'winner' : ''}">
+                            <span class="truncate pr-2">${p.name}</span>
+                            <span class="text-slate-400 font-medium">${getBowlerScore(p.id, 2, type) || '-'}</span>
+                        </div>
+                    `).join('')}
+                </div>
+
+                <!-- Finals (Game 3) -->
+                <div class="bracket-column justify-around">
+                    ${r3.map(p => `
+                        <div class="player-slot ${champ.id === p.id && getBowlerScore(p.id, 3, type) > 0 ? 'winner' : ''}">
+                            <span class="truncate pr-2">${p.name}</span>
+                            <span class="text-slate-400 font-medium">${getBowlerScore(p.id, 3, type) || '-'}</span>
+                        </div>
+                    `).join('')}
+                </div>
+
+                <!-- Winner -->
+                <div class="bracket-column justify-center pl-2">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase text-center mb-1 tracking-wider">Champion</div>
+                    <div class="player-slot champion">
+                        ${getBowlerScore(champ.id, 3, type) > 0 ? champ.name : 'TBD'}
+                    </div>
+                </div>
+            </div>
         </div>
-    `).join('');
+        `;
+    });
+
+    container.innerHTML = html;
 }
 
-// --- SCORING SYSTEM ---
+// --- CENTRAL SCORING SYSTEM ---
 function renderScoringTable() {
     const tbody = document.getElementById('scoringTableBody');
     tbody.innerHTML = '';
     
-    // Sort alphabetically for scoring ease
+    // Sort bowlers alphabetically for the scoring sheet
     let sortedBowlers = [...bowlers].sort((a, b) => a.name.localeCompare(b.name));
     
     sortedBowlers.forEach(b => {
@@ -130,14 +218,14 @@ function renderScoringTable() {
         let hdcpSeries = scrSeries + (b.hdcp * 3);
         
         tbody.innerHTML += `
-            <tr class="border-b border-slate-100 hover:bg-slate-50">
+            <tr class="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                 <td class="py-3 px-4 flex items-center gap-2">
                     <span class="text-slate-800">${b.name}</span>
-                    <span class="bg-lime-100 text-lime-800 text-xs px-2 py-1 rounded-full">+${b.hdcp}</span>
+                    <span class="bg-lime-100 text-lime-800 text-xs px-2 py-0.5 rounded-full font-bold">+${b.hdcp}</span>
                 </td>
-                <td class="py-2 px-2"><input type="number" onchange="updateScore('${b.id}', 'g1', this.value)" value="${b.scores.g1 || ''}" class="w-16 px-2 py-1 border rounded text-center bg-white"></td>
-                <td class="py-2 px-2"><input type="number" onchange="updateScore('${b.id}', 'g2', this.value)" value="${b.scores.g2 || ''}" class="w-16 px-2 py-1 border rounded text-center bg-white"></td>
-                <td class="py-2 px-2"><input type="number" onchange="updateScore('${b.id}', 'g3', this.value)" value="${b.scores.g3 || ''}" class="w-16 px-2 py-1 border rounded text-center bg-white"></td>
+                <td class="py-2 px-2"><input type="number" onchange="updateScore('${b.id}', 'g1', this.value)" value="${b.scores.g1 || ''}" class="w-20 px-2 py-2 border rounded-lg text-center bg-white shadow-inner focus:ring-2 focus:ring-lime-400 outline-none"></td>
+                <td class="py-2 px-2"><input type="number" onchange="updateScore('${b.id}', 'g2', this.value)" value="${b.scores.g2 || ''}" class="w-20 px-2 py-2 border rounded-lg text-center bg-white shadow-inner focus:ring-2 focus:ring-lime-400 outline-none"></td>
+                <td class="py-2 px-2"><input type="number" onchange="updateScore('${b.id}', 'g3', this.value)" value="${b.scores.g3 || ''}" class="w-20 px-2 py-2 border rounded-lg text-center bg-white shadow-inner focus:ring-2 focus:ring-lime-400 outline-none"></td>
                 <td class="py-3 px-2 text-slate-400">${scrSeries > 0 ? scrSeries : '-'}</td>
                 <td class="py-3 px-2 text-lime-600 font-black">${scrSeries > 0 ? hdcpSeries : '-'}</td>
             </tr>
@@ -149,12 +237,15 @@ function updateScore(id, game, val) {
     let bowler = bowlers.find(b => b.id === id);
     if(bowler) {
         bowler.scores[game] = parseInt(val) || 0;
-        // Optional: Call renderScoringTable() here if you want live series updating, 
-        // but it forces loss of focus on the input field. Better to re-render on save.
     }
 }
 
 function calculateWinners() {
-    renderScoringTable();
-    alert('Scores saved globally! Ready to resolve generated brackets in Phase 2.');
+    renderScoringTable(); // Update the series totals in the table
+    // Re-render brackets to visually show the advancements based on the new scores
+    renderBrackets(brackets.hdcp, 'hdcpBracketDisplay', 'HDCP', 'hdcp');
+    renderBrackets(brackets.scratch, 'scratchBracketDisplay', 'Scratch', 'scratch');
+    
+    // Switch to brackets tab automatically to view results
+    switchTab('brackets');
 }
