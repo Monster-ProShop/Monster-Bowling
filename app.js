@@ -28,16 +28,20 @@ function shuffle(a) { for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.rand
 function buildBrackets(bowlers,type) {
   const prop = type==='hdcp'?'hdcpCount':'scratchCount';
   const pool = bowlers.map(b=>({id:b.id,limit:Math.max(0,Math.floor(Number(b[prop])||0)),assigned:0}));
+  const eligible=pool.filter(b=>b.limit>0).length;
+  if(eligible<7) return [];
+  const spots=eligible===7?7:8;
   const total = pool.reduce((n,b)=>n+b.limit,0);
-  let low=0, high=Math.floor(total/8);
+  let low=0, high=Math.floor(total/spots);
   // A bowler can appear only once in each bracket. This condition gives the
-  // maximum number of full brackets possible under everyone's limits.
+  // maximum number of brackets possible under everyone's limits. A seven
+  // bowler field gets one first-round bye in each eight-slot bracket.
   while(low<high) {
     const mid=Math.ceil((low+high)/2);
-    if(pool.reduce((n,b)=>n+Math.min(b.limit,mid),0)>=8*mid) low=mid;
+    if(pool.reduce((n,b)=>n+Math.min(b.limit,mid),0)>=spots*mid) low=mid;
     else high=mid-1;
   }
-  const count=low, entries=count*8;
+  const count=low, entries=count*spots;
   if(!count) return [];
   // Spread spots across bowlers first, then use the remaining capacity.
   for(let i=0;i<entries;i++) {
@@ -51,7 +55,7 @@ function buildBrackets(bowlers,type) {
     const available=shuffle(result.map((ids,index)=>({ids,index}))).sort((a,b)=>a.ids.length-b.ids.length);
     available.slice(0,b.assigned).forEach(slot=>slot.ids.push(b.id));
   });
-  return result.map(shuffle);
+  return result.map(ids=>shuffle(spots===7?[...ids,null]:ids));
 }
 function complete(b) { return ['g1','g2','g3'].every(g=>b.scores[g]!==null && b.scores[g]!=='' && Number.isFinite(Number(b.scores[g]))); }
 function game(b,g,handicap=false) { return Number(b.scores['g'+g])+(handicap?Number(b.handicap):0); }
@@ -75,13 +79,64 @@ function rankAwards(players,value,pool,percentages,description) {
 }
 function bracketFinalists(ids,type,bowlers) {
   const byId=new Map(bowlers.map(b=>[b.id,b]));
-  const players=ids.map(id=>byId.get(id));
-  if(players.some(p=>!p || !complete(p))) return null;
+  const players=ids.map(id=>id===null?null:byId.get(id));
+  if(players.some((p,i)=>ids[i]!==null&&(!p||!complete(p)))) return null;
   const hdcp=type==='hdcp';
-  const winners=(group,g)=>{const max=Math.max(...group.map(p=>game(p,g,hdcp)));return group.filter(p=>game(p,g,hdcp)===max);};
+  const winners=(group,g)=>{const active=group.filter(Boolean);if(active.length<=1)return active;const max=Math.max(...active.map(p=>game(p,g,hdcp)));return active.filter(p=>game(p,g,hdcp)===max);};
   const round1=[0,2,4,6].map(i=>winners(players.slice(i,i+2),1));
   const semi=[winners([...round1[0],...round1[1]],2),winners([...round1[2],...round1[3]],2)];
   return [...semi[0],...semi[1]];
+}
+function bracketGraphic(ids,type,bowlers,index) {
+  const byId=new Map(bowlers.map(b=>[b.id,b]));
+  const entrants=ids.map(id=>id===null?null:byId.get(id)).filter((_,i)=>i<8);
+  const hdcp=type==='hdcp';
+  const outcome=(members,gameNumber,ready=true)=>{
+    if(!ready) return {winners:[],decided:false};
+    const active=members.filter(Boolean);
+    if(active.length===1) return {winners:active,decided:true};
+    if(!active.length||active.some(b=>b.scores['g'+gameNumber]===null)) return {winners:[],decided:false};
+    const top=Math.max(...active.map(b=>game(b,gameNumber,hdcp)));
+    return {winners:active.filter(b=>game(b,gameNumber,hdcp)===top),decided:true};
+  };
+  const first=Array.from({length:4},(_,i)=>outcome(entrants.slice(i*2,i*2+2),1));
+  const second=Array.from({length:2},(_,i)=>outcome([...first[i*2].winners,...first[i*2+1].winners],2,first[i*2].decided&&first[i*2+1].decided));
+  const final=outcome([...second[0].winners,...second[1].winners],3,second.every(x=>x.decided));
+  const xs=[20,300,590,870], width=210, height=34;
+  const ys1=Array.from({length:8},(_,i)=>70+i*54);
+  const centers1=ys1.map(y=>y+height/2);
+  const centers2=Array.from({length:4},(_,i)=>(centers1[i*2]+centers1[i*2+1])/2);
+  const centers3=Array.from({length:2},(_,i)=>(centers2[i*2]+centers2[i*2+1])/2);
+  const center4=(centers3[0]+centers3[1])/2;
+  const line=(x1,y1,x2,y2)=>'<path d="M'+x1+' '+y1+' L'+x2+' '+y2+'" fill="none" stroke="#9b8254" stroke-width="2.5"/>';
+  const links=(fromX,toX,centers)=>centers.reduce((out,y,i)=>{
+    if(i%2)return out;
+    const y2=centers[i+1], mid=(y+y2)/2, joint=fromX+27;
+    return out+line(fromX,y,joint,y)+line(fromX,y2,joint,y2)+line(joint,y,joint,y2)+line(joint,mid,toX,mid);
+  },'');
+  const box=(x,y,people,g,result,placeholder='PENDING')=>{
+    const one=people.filter(Boolean), bye=!one.length;
+    const label=bye?placeholder:one.map(b=>b.name).join(' / ');
+    const score=one.length===1&&one[0].scores['g'+g]!==null?'  '+game(one[0],g,hdcp):'';
+    const shown=(label+score).length>27?(label+score).slice(0,26)+'…':label+score;
+    const won=result.decided&&one.length>0&&one.every(b=>result.winners.some(w=>w.id===b.id));
+    const lost=result.decided&&one.length>0&&one.every(b=>!result.winners.some(w=>w.id===b.id));
+    const bg=bye?'#eeeae3':'#fffaf0';
+    let mark='';
+    if(won) mark='<ellipse cx="'+(x+width/2)+'" cy="'+(y+height/2)+'" rx="'+(width/2+5)+'" ry="'+(height/2+5)+'" fill="none" stroke="#1d67d6" stroke-width="3.5"/>';
+    if(lost) mark='<path d="M'+(x+width-26)+' '+(y+8)+' l16 18 M'+(x+width-10)+' '+(y+8)+' l-16 18" fill="none" stroke="#c53038" stroke-width="4" stroke-linecap="round"/>';
+    return '<g><title>'+safe(label)+'</title><rect x="'+x+'" y="'+y+'" width="'+width+'" height="'+height+'" rx="8" fill="'+bg+'" stroke="#bdac8b"/><text x="'+(x+12)+'" y="'+(y+22)+'" font-size="14" font-weight="700" fill="'+(bye?'#777':'#17212e')+'">'+safe(shown)+'</text>'+mark+'</g>';
+  };
+  let svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1110 550" role="img" aria-label="'+safe((hdcp?'Handicap':'Scratch')+' bracket '+(index+1))+'" class="bracket-svg"><rect width="1110" height="550" fill="#fffdf9"/>';
+  ['GAME 1','GAME 2 · SEMIFINAL','GAME 3 · FINAL','WINNER'].forEach((t,i)=>svg+='<text x="'+xs[i]+'" y="38" fill="#66151c" font-size="16" font-weight="800">'+t+'</text>');
+  svg+=links(xs[0]+width,xs[1],centers1)+links(xs[1]+width,xs[2],centers2);
+  svg+=line(xs[2]+width,centers3[0],xs[2]+width+27,centers3[0])+line(xs[2]+width,centers3[1],xs[2]+width+27,centers3[1])+line(xs[2]+width+27,centers3[0],xs[2]+width+27,centers3[1])+line(xs[2]+width+27,center4,xs[3],center4);
+  entrants.forEach((p,i)=>svg+=box(xs[0],ys1[i],p?[p]:[],1,first[Math.floor(i/2)],'BYE'));
+  first.forEach((r,i)=>svg+=box(xs[1],centers2[i]-height/2,r.winners,2,second[Math.floor(i/2)]));
+  second.forEach((r,i)=>svg+=box(xs[2],centers3[i]-height/2,r.winners,3,final));
+  svg+=box(xs[3],center4-height/2,final.winners,3,{winners:final.winners,decided:final.decided});
+  svg+='<text x="20" y="530" fill="#596578" font-size="13">Blue circle = winner   •   Red X = loser   •   BYE = automatic advance</text></svg>';
+  return svg;
 }
 function calculate(state) {
   const c=state.config, bowlers=state.bowlers, awards=[], pending=[];
@@ -90,7 +145,7 @@ function calculate(state) {
     for(const [i,ids] of state.brackets[type].entries()) {
       const finalists=bracketFinalists(ids,type,bowlers);
       if(!finalists){pending.push(type+' bracket #'+(i+1)+' needs all three scores for every entrant.');continue;}
-      const pool=cents(c[type+'Buyin'])*8;
+      const pool=cents(c[type+'Buyin'])*ids.filter(Boolean).length;
       const value=p=>game(p,3,type==='hdcp');
       awards.push(...rankAwards(finalists,value,pool,[c[type+'First'],c[type+'Second']],(type==='hdcp'?'HDCP':'Scratch')+' bracket #'+(i+1)));
     }
@@ -112,7 +167,7 @@ function render() {
   CONFIG_IDS.forEach(id=>{const el=document.getElementById(id); if(document.activeElement!==el) el.value=state.config[id];});
   document.getElementById('rosterRows').innerHTML=state.bowlers.map(b=>'<tr><td>'+safe(b.name)+'</td><td>'+b.handicap+'</td><td>'+b.hdcpCount+'</td><td>'+b.scratchCount+'</td><td>'+(b.high?'Yes':'No')+'</td><td>'+(b.quin?'Yes':'No')+'</td><td><button class="secondary" data-edit="'+safe(b.id)+'">Edit</button> <button class="danger" data-remove="'+safe(b.id)+'">Remove</button></td></tr>').join('') || '<tr><td colspan="7">No bowlers registered yet.</td></tr>';
   for(const type of ['hdcp','scratch']) {
-    document.getElementById(type+'Brackets').innerHTML=state.brackets[type].map((ids,i)=>'<div class="bracket"><strong>Bracket #'+(i+1)+'</strong><ol>'+ids.map(id=>{const b=state.bowlers.find(x=>x.id===id);return '<li>'+safe(b?.name||'Removed bowler')+'</li>';}).join('')+'</ol></div>').join('') || '<p class="hint">No complete brackets generated.</p>';
+    document.getElementById(type+'Brackets').innerHTML=state.brackets[type].map((ids,i)=>'<div class="bracket"><div class="bracket-head"><strong>'+(type==='hdcp'?'Handicap':'Scratch')+' bracket #'+(i+1)+'</strong><button class="secondary no-print" data-download="'+type+':'+i+'">Download SVG image</button></div><div class="bracket-scroll">'+bracketGraphic(ids,type,state.bowlers,i)+'</div></div>').join('') || '<p class="hint">No brackets generated. At least seven different bowlers must select this event.</p>';
   }
   const unused=state.bowlers.flatMap(b=>['hdcp','scratch'].map(t=>{const n=b[t+'Count']-assignedCount(t,b.id);return n>0?b.name+': '+n+' unused '+t+' '+(n===1?'spot':'spots'):null;})).filter(Boolean);
   document.getElementById('bracketNotice').innerHTML=state.generated&&unused.length?'<p class="notice">Willingness above the available full brackets: '+safe(unused.join(' · '))+'</p>':'';
@@ -176,7 +231,17 @@ function setup() {
     if(remove){const b=state.bowlers.find(x=>x.id===remove.dataset.remove);if(!b||!confirm('Remove '+b.name+' and regenerate brackets?'))return;state.bowlers=state.bowlers.filter(x=>x.id!==b.id);state.brackets={hdcp:[],scratch:[]};state.generated=false;persist();render();status('Bowler removed. Generate brackets again.');}
   });
   document.getElementById('generate').addEventListener('click',()=>{
-    state.brackets={hdcp:buildBrackets(state.bowlers,'hdcp'),scratch:buildBrackets(state.bowlers,'scratch')};state.generated=true;persist();render();status('Brackets generated.');
+    state.brackets={hdcp:buildBrackets(state.bowlers,'hdcp'),scratch:buildBrackets(state.bowlers,'scratch')};state.generated=true;persist();render();
+    const total=state.brackets.hdcp.length+state.brackets.scratch.length;
+    status(total?total+' bracket'+(total===1?'':'s')+' generated.':'No brackets generated. At least seven different bowlers must join an event.');
+  });
+  document.getElementById('brackets').addEventListener('click',e=>{
+    const button=e.target.closest('[data-download]');if(!button)return;
+    const svg=button.closest('.bracket').querySelector('svg');
+    const file=new Blob([new XMLSerializer().serializeToString(svg)],{type:'image/svg+xml;charset=utf-8'});
+    const link=document.createElement('a');link.href=URL.createObjectURL(file);
+    link.download='monster-bowling-'+button.dataset.download.replace(':','-')+'.svg';link.click();
+    setTimeout(()=>URL.revokeObjectURL(link.href),1000);
   });
   document.getElementById('scoreRows').addEventListener('change',e=>{
     const id=e.target.dataset.score;if(!id)return;const b=state.bowlers.find(x=>x.id===id);if(!b)return;
@@ -187,5 +252,5 @@ function setup() {
   toggleCounts();render();
 }
 if(typeof document!=='undefined') setup();
-if(typeof module!=='undefined') module.exports={fresh,buildBrackets,calculate,rankAwards,configured,complete,assignedCount};
+if(typeof module!=='undefined') module.exports={fresh,buildBrackets,bracketGraphic,calculate,rankAwards,configured,complete,assignedCount};
 
