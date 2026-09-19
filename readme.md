@@ -4,8 +4,8 @@ Open `index.html` in a browser, or use the repository's GitHub Pages site. No bu
 
 ## Tournament workflow
 
-1. On **Registration & configuration**, set each buy-in and the payout percentages, then register bowlers. Handicap and scratch bracket entries each have their own requested count. High Game Pot and Quiniela are yes/no entries.
-2. Generate brackets after the roster is final. Each bracket has eight different bowlers. Entries that cannot be placed in a complete bracket remain pending and are not charged. Changing the roster clears the draw, so generate again.
+1. On **Registration & configuration**, set each buy-in and the payout percentages, then register bowlers. Enter the maximum number of handicap and scratch brackets each bowler is willing to play. High Game Pot and Quiniela are yes/no entries.
+2. Generate brackets after the roster is final. The draw makes the greatest possible number of complete brackets with eight different bowlers in each, while staying within everyone's stated maximum. A bowler may be assigned fewer brackets than offered. Only assigned entries are charged. Changing the roster clears the draw, so generate again.
 3. Enter three scratch game scores per bowler. Blank means unbowled; zero is a valid score.
 4. Open **Reports & payouts** to see each bowler's charges, awards, and the total awarded. Print the report from the browser.
 
