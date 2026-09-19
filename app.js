@@ -27,15 +27,31 @@ function assignedCount(type,id) { return state.brackets[type].reduce((n,b)=>n+b.
 function shuffle(a) { for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
 function buildBrackets(bowlers,type) {
   const prop = type==='hdcp'?'hdcpCount':'scratchCount';
-  const pool = bowlers.map(b=>({id:b.id,left:b[prop]}));
-  const result = [];
-  while (pool.filter(x=>x.left>0).length>=8) {
-    const candidates = shuffle(pool.filter(x=>x.left>0)).sort((a,b)=>b.left-a.left);
-    const selected = candidates.slice(0,8);
-    selected.forEach(x=>x.left--);
-    result.push(shuffle(selected.map(x=>x.id)));
+  const pool = bowlers.map(b=>({id:b.id,limit:Math.max(0,Math.floor(Number(b[prop])||0)),assigned:0}));
+  const total = pool.reduce((n,b)=>n+b.limit,0);
+  let low=0, high=Math.floor(total/8);
+  // A bowler can appear only once in each bracket. This condition gives the
+  // maximum number of full brackets possible under everyone's limits.
+  while(low<high) {
+    const mid=Math.ceil((low+high)/2);
+    if(pool.reduce((n,b)=>n+Math.min(b.limit,mid),0)>=8*mid) low=mid;
+    else high=mid-1;
   }
-  return result;
+  const count=low, entries=count*8;
+  if(!count) return [];
+  // Spread spots across bowlers first, then use the remaining capacity.
+  for(let i=0;i<entries;i++) {
+    const eligible=pool.filter(b=>b.assigned<Math.min(b.limit,count));
+    const chosen=shuffle(eligible).sort((a,b)=>(a.assigned/Math.min(a.limit,count))-(b.assigned/Math.min(b.limit,count)))[0];
+    chosen.assigned++;
+  }
+  // Place the largest assignments first into the emptiest brackets.
+  const result=Array.from({length:count},()=>[]);
+  shuffle(pool).sort((a,b)=>b.assigned-a.assigned).forEach(b=>{
+    const available=shuffle(result.map((ids,index)=>({ids,index}))).sort((a,b)=>a.ids.length-b.ids.length);
+    available.slice(0,b.assigned).forEach(slot=>slot.ids.push(b.id));
+  });
+  return result.map(shuffle);
 }
 function complete(b) { return ['g1','g2','g3'].every(g=>b.scores[g]!==null && b.scores[g]!=='' && Number.isFinite(Number(b.scores[g]))); }
 function game(b,g,handicap=false) { return Number(b.scores['g'+g])+(handicap?Number(b.handicap):0); }
@@ -98,8 +114,8 @@ function render() {
   for(const type of ['hdcp','scratch']) {
     document.getElementById(type+'Brackets').innerHTML=state.brackets[type].map((ids,i)=>'<div class="bracket"><strong>Bracket #'+(i+1)+'</strong><ol>'+ids.map(id=>{const b=state.bowlers.find(x=>x.id===id);return '<li>'+safe(b?.name||'Removed bowler')+'</li>';}).join('')+'</ol></div>').join('') || '<p class="hint">No complete brackets generated.</p>';
   }
-  const unfilled=state.bowlers.flatMap(b=>['hdcp','scratch'].map(t=>{const n=b[t+'Count']-assignedCount(t,b.id);return n>0?b.name+': '+n+' pending '+t+' bracket '+(n===1?'entry':'entries'):null;})).filter(Boolean);
-  document.getElementById('bracketNotice').innerHTML=unfilled.length?'<p class="notice">'+safe(unfilled.join(' · '))+'</p>':'';
+  const unused=state.bowlers.flatMap(b=>['hdcp','scratch'].map(t=>{const n=b[t+'Count']-assignedCount(t,b.id);return n>0?b.name+': '+n+' unused '+t+' '+(n===1?'spot':'spots'):null;})).filter(Boolean);
+  document.getElementById('bracketNotice').innerHTML=state.generated&&unused.length?'<p class="notice">Willingness above the available full brackets: '+safe(unused.join(' · '))+'</p>':'';
   document.getElementById('scoreRows').innerHTML=state.bowlers.map(b=>'<tr><td>'+safe(b.name)+' (+'+b.handicap+')</td>'+[1,2,3].map(g=>'<td><input aria-label="'+safe(b.name)+' game '+g+'" data-score="'+safe(b.id)+'" data-game="g'+g+'" type="number" min="0" max="300" step="1" value="'+(b.scores['g'+g]??'')+'"></td>').join('')+'<td>'+(complete(b)?series(b):'—')+'</td><td>'+(complete(b)?series(b,true):'—')+'</td></tr>').join('')||'<tr><td colspan="6">Register bowlers first.</td></tr>';
   const c=state.config;
   const chargeRows=state.bowlers.map(b=>{
@@ -108,7 +124,7 @@ function render() {
     return '<tr><td>'+safe(b.name)+'</td><td>'+h+' × '+money(cents(c.hdcpBuyin))+'</td><td>'+s+' × '+money(cents(c.scratchBuyin))+'</td><td>'+money(high*cents(c.highBuyin))+'</td><td>'+money(quin*cents(c.quinBuyin))+'</td><td class="money">'+money(total)+'</td></tr>';
   });
   document.getElementById('chargeRows').innerHTML=chargeRows.join('')||'<tr><td colspan="6">No registrations yet.</td></tr>';
-  document.getElementById('chargeNotice').innerHTML=unfilled.length?'<p class="notice">Pending bracket entries are excluded from charges: '+safe(unfilled.join(' · '))+'</p>':'';
+  document.getElementById('chargeNotice').innerHTML=!state.generated&&state.bowlers.some(b=>b.hdcpCount||b.scratchCount)?'<p class="notice">Generate brackets to determine actual bracket charges.</p>':unused.length?'<p class="notice">Unused bracket willingness is not charged: '+safe(unused.join(' · '))+'</p>':'';
   const result=calculate(state);
   document.getElementById('payoutNotice').innerHTML=result.pending.length?'<p class="notice">'+safe(result.pending.join(' · '))+'</p>':'';
   document.getElementById('payoutRows').innerHTML=result.awards.map(a=>'<tr><td>'+safe(state.bowlers.find(b=>b.id===a.id)?.name||'Unknown')+'</td><td>'+safe(a.description)+'</td><td class="money">'+money(a.amount)+'</td></tr>').join('')||'<tr><td colspan="3">No payouts determined yet.</td></tr>';
