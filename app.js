@@ -162,6 +162,26 @@ function calculate(state) {
   } else if(quin.length) pending.push('Quiniela needs all three scores for every entrant.');
   return {awards,pending};
 }
+function reportSummary(data) {
+  const c=data.config, result=calculate(data);
+  const count=(type,id)=>(data.brackets[type]||[]).reduce((n,ids)=>n+ids.filter(x=>x===id).length,0);
+  const rows=data.bowlers.map(b=>{
+    const h=count('hdcp',b.id), s=count('scratch',b.id);
+    const charges=[
+      ...(h?[{label:h+' handicap bracket'+(h===1?'':'s')+' × '+money(cents(c.hdcpBuyin)),amount:h*cents(c.hdcpBuyin)}]:[]),
+      ...(s?[{label:s+' scratch bracket'+(s===1?'':'s')+' × '+money(cents(c.scratchBuyin)),amount:s*cents(c.scratchBuyin)}]:[]),
+      ...(b.high?[{label:'Handicap High Game Pot',amount:cents(c.highBuyin)}]:[]),
+      ...(b.quin?[{label:'Quiniela',amount:cents(c.quinBuyin)}]:[])
+    ];
+    const winnings=result.awards.filter(a=>a.id===b.id);
+    const due=charges.reduce((n,x)=>n+x.amount,0), won=winnings.reduce((n,x)=>n+x.amount,0);
+    return {id:b.id,name:b.name,charges,due,winnings,won,net:won-due};
+  });
+  const collected=rows.reduce((n,r)=>n+r.due,0), awarded=rows.reduce((n,r)=>n+r.won,0);
+  return {rows,collected,awarded,net:awarded-collected,pending:result.pending};
+}
+function balanceText(amount) { return (amount<0?'−':amount>0?'+':'')+money(Math.abs(amount)); }
+function balanceClass(amount) { return amount<0?'balance-negative':amount>0?'balance-positive':'balance-zero'; }
 function status(message) { document.getElementById('status').textContent=message; }
 function render() {
   CONFIG_IDS.forEach(id=>{const el=document.getElementById(id); if(document.activeElement!==el) el.value=state.config[id];});
@@ -172,18 +192,16 @@ function render() {
   const unused=state.bowlers.flatMap(b=>['hdcp','scratch'].map(t=>{const n=b[t+'Count']-assignedCount(t,b.id);return n>0?b.name+': '+n+' unused '+t+' '+(n===1?'spot':'spots'):null;})).filter(Boolean);
   document.getElementById('bracketNotice').innerHTML=state.generated&&unused.length?'<p class="notice">Willingness above the available full brackets: '+safe(unused.join(' · '))+'</p>':'';
   document.getElementById('scoreRows').innerHTML=state.bowlers.map(b=>'<tr><td>'+safe(b.name)+' (+'+b.handicap+')</td>'+[1,2,3].map(g=>'<td><input aria-label="'+safe(b.name)+' game '+g+'" data-score="'+safe(b.id)+'" data-game="g'+g+'" type="number" min="0" max="300" step="1" value="'+(b.scores['g'+g]??'')+'"></td>').join('')+'<td>'+(complete(b)?series(b):'—')+'</td><td>'+(complete(b)?series(b,true):'—')+'</td></tr>').join('')||'<tr><td colspan="6">Register bowlers first.</td></tr>';
-  const c=state.config;
-  const chargeRows=state.bowlers.map(b=>{
-    const h=assignedCount('hdcp',b.id),s=assignedCount('scratch',b.id),high=b.high?1:0,quin=b.quin?1:0;
-    const total=h*cents(c.hdcpBuyin)+s*cents(c.scratchBuyin)+high*cents(c.highBuyin)+quin*cents(c.quinBuyin);
-    return '<tr><td>'+safe(b.name)+'</td><td>'+h+' × '+money(cents(c.hdcpBuyin))+'</td><td>'+s+' × '+money(cents(c.scratchBuyin))+'</td><td>'+money(high*cents(c.highBuyin))+'</td><td>'+money(quin*cents(c.quinBuyin))+'</td><td class="money">'+money(total)+'</td></tr>';
-  });
-  document.getElementById('chargeRows').innerHTML=chargeRows.join('')||'<tr><td colspan="6">No registrations yet.</td></tr>';
-  document.getElementById('chargeNotice').innerHTML=!state.generated&&state.bowlers.some(b=>b.hdcpCount||b.scratchCount)?'<p class="notice">Generate brackets to determine actual bracket charges.</p>':unused.length?'<p class="notice">Unused bracket willingness is not charged: '+safe(unused.join(' · '))+'</p>':'';
-  const result=calculate(state);
-  document.getElementById('payoutNotice').innerHTML=result.pending.length?'<p class="notice">'+safe(result.pending.join(' · '))+'</p>':'';
-  document.getElementById('payoutRows').innerHTML=result.awards.map(a=>'<tr><td>'+safe(state.bowlers.find(b=>b.id===a.id)?.name||'Unknown')+'</td><td>'+safe(a.description)+'</td><td class="money">'+money(a.amount)+'</td></tr>').join('')||'<tr><td colspan="3">No payouts determined yet.</td></tr>';
-  document.getElementById('payoutTotal').textContent='Total awarded: '+money(result.awards.reduce((n,a)=>n+a.amount,0));
+  const report=reportSummary(state);
+  const notes=[
+    ...(!state.generated&&state.bowlers.some(b=>b.hdcpCount||b.scratchCount)?['Generate brackets to determine actual bracket charges.']:[]),
+    ...(state.generated&&unused.length?['Unused bracket willingness is not charged: '+unused.join(' · ')]:[]),
+    ...report.pending
+  ];
+  document.getElementById('reportNotice').innerHTML=notes.length?'<p class="notice">'+safe(notes.join(' · '))+(report.pending.length?' Balances may change when pending results are entered.':'')+'</p>':'';
+  const list=(items,label)=>items.length?'<ul class="breakdown">'+items.map(x=>'<li>'+safe(x.label||x.description)+' <span class="detail-amount">'+money(x.amount)+'</span></li>').join('')+'</ul>':'<span class="hint">'+label+'</span>';
+  document.getElementById('reportRows').innerHTML=report.rows.map(r=>'<tr><td><strong>'+safe(r.name)+'</strong></td><td>'+list(r.charges,'No entries')+'</td><td class="money">'+money(r.due)+'</td><td>'+list(r.winnings,'No winnings')+'</td><td class="money">'+money(r.won)+'</td><td class="money '+balanceClass(r.net)+'">'+balanceText(r.net)+'</td></tr>').join('')||'<tr><td colspan="6">No bowlers registered yet.</td></tr>';
+  document.getElementById('reportTotals').innerHTML='<div>Total charges<strong>'+money(report.collected)+'</strong></div><div>Total winnings<strong>'+money(report.awarded)+'</strong></div><div>Combined bowler balance<strong class="'+balanceClass(report.net)+'">'+balanceText(report.net)+'</strong></div>';
 }
 function resetForm() {
   editingId=null;document.getElementById('bowlerForm').reset();document.getElementById('handicap').value=0;
@@ -252,5 +270,5 @@ function setup() {
   toggleCounts();render();
 }
 if(typeof document!=='undefined') setup();
-if(typeof module!=='undefined') module.exports={fresh,buildBrackets,bracketGraphic,calculate,rankAwards,configured,complete,assignedCount};
+if(typeof module!=='undefined') module.exports={fresh,buildBrackets,bracketGraphic,calculate,reportSummary,rankAwards,configured,complete,assignedCount};
 
