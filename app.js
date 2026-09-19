@@ -1,238 +1,175 @@
-// --- STATE MANAGEMENT ---
-let bowlers = [];
-let brackets = { hdcp: [], scratch: [] };
-
-// --- TAB NAVIGATION ---
-function switchTab(tabId) {
-    const tabs = ['setup', 'roster', 'brackets', 'scoring'];
-    tabs.forEach(t => {
-        document.getElementById(`sec-${t}`).classList.add('section-hidden');
-        document.getElementById(`tab-${t}`).className = 'tab-btn tab-inactive py-3 rounded shadow uppercase tracking-wide text-sm';
-    });
-    document.getElementById(`sec-${tabId}`).classList.remove('section-hidden');
-    document.getElementById(`tab-${tabId}`).className = 'tab-btn tab-active py-3 rounded shadow uppercase tracking-wide text-sm';
-
-    if (tabId === 'scoring') renderScoringTable();
-    if (tabId === 'brackets') {
-        renderBrackets(brackets.hdcp, 'hdcpBracketDisplay', 'HDCP Bracket', 'hdcp');
-        renderBrackets(brackets.scratch, 'scratchBracketDisplay', 'Scratch Bracket', 'scratch');
-    }
+const KEY = 'monster-bowling-v2';
+const DEFAULT_CONFIG = {hdcpBuyin:10,hdcpFirst:50,hdcpSecond:25,scratchBuyin:10,scratchFirst:50,scratchSecond:25,highBuyin:20,highPayout:100,quinBuyin:50,quinGameFirst:30,quinGameSecond:20,quinSeriesFirst:30,quinSeriesSecond:20};
+const CONFIG_IDS = Object.keys(DEFAULT_CONFIG);
+const money = cents => '$' + (cents / 100).toFixed(2);
+const cents = value => Math.round(Number(value) * 100);
+const safe = value => String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+const num = (value, fallback=0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+const blankScores = () => ({g1:null,g2:null,g3:null});
+function fresh() { return {config:{...DEFAULT_CONFIG},bowlers:[],brackets:{hdcp:[],scratch:[]},generated:false}; }
+function load() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(KEY));
+    if (!raw || !Array.isArray(raw.bowlers)) return fresh();
+    return {config:{...DEFAULT_CONFIG,...raw.config},bowlers:raw.bowlers.map(b=>({...b,high:!!b.high,quin:!!b.quin,scores:{...blankScores(),...b.scores}})),brackets:raw.brackets || {hdcp:[],scratch:[]},generated:!!raw.generated};
+  } catch { return fresh(); }
 }
-
-// --- ROSTER MANAGEMENT ---
-document.getElementById('addBowlerForm').addEventListener('submit', (e) => {
+let state = typeof localStorage === 'undefined' ? fresh() : load();
+let editingId = null;
+function persist() { if (typeof localStorage !== 'undefined') localStorage.setItem(KEY,JSON.stringify(state)); }
+function configured(c) {
+  for (const id of CONFIG_IDS) if (!Number.isFinite(Number(c[id])) || c[id] < 0 || (id.includes('Buyin') && cents(c[id]) < 0) || (!id.includes('Buyin') && c[id] > 100)) return false;
+  return c.hdcpFirst+c.hdcpSecond <= 100 && c.scratchFirst+c.scratchSecond <= 100 &&
+    c.quinGameFirst+c.quinGameSecond+c.quinSeriesFirst+c.quinSeriesSecond <= 100;
+}
+function totalEntries(type) { return state.brackets[type].reduce((n,b)=>n+b.length,0); }
+function assignedCount(type,id) { return state.brackets[type].reduce((n,b)=>n+b.filter(p=>p===id).length,0); }
+function shuffle(a) { for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
+function buildBrackets(bowlers,type) {
+  const prop = type==='hdcp'?'hdcpCount':'scratchCount';
+  const pool = bowlers.map(b=>({id:b.id,left:b[prop]}));
+  const result = [];
+  while (pool.filter(x=>x.left>0).length>=8) {
+    const candidates = shuffle(pool.filter(x=>x.left>0)).sort((a,b)=>b.left-a.left);
+    const selected = candidates.slice(0,8);
+    selected.forEach(x=>x.left--);
+    result.push(shuffle(selected.map(x=>x.id)));
+  }
+  return result;
+}
+function complete(b) { return ['g1','g2','g3'].every(g=>b.scores[g]!==null && b.scores[g]!=='' && Number.isFinite(Number(b.scores[g]))); }
+function game(b,g,handicap=false) { return Number(b.scores['g'+g])+(handicap?Number(b.handicap):0); }
+function series(b,handicap=false) { return [1,2,3].reduce((n,g)=>n+game(b,g,handicap),0); }
+function bestGame(b,handicap=false) { return Math.max(...[1,2,3].map(g=>game(b,g,handicap))); }
+function rankAwards(players,value,pool,percentages,description) {
+  const sorted=[...players].sort((a,b)=>value(b)-value(a)||a.name.localeCompare(b.name));
+  const awards=[];
+  let rank=0;
+  for(let i=0;i<sorted.length && rank<percentages.length;){
+    const tied=sorted.filter(p=>value(p)===value(sorted[i]));
+    const first=i, last=i+tied.length;
+    const amount=percentages.slice(first,Math.min(last,percentages.length)).reduce((n,p)=>n+Math.round(pool*p/100),0);
+    if(amount>0) {
+      const share=Math.floor(amount/tied.length), remainder=amount%tied.length;
+      tied.forEach((p,j)=>awards.push({id:p.id,description:description+' · '+(first+1)+(tied.length>1?' tie':'')+' ('+value(p)+')',amount:share+(j<remainder?1:0)}));
+    }
+    i=last;rank=i;
+  }
+  return awards;
+}
+function bracketFinalists(ids,type,bowlers) {
+  const byId=new Map(bowlers.map(b=>[b.id,b]));
+  const players=ids.map(id=>byId.get(id));
+  if(players.some(p=>!p || !complete(p))) return null;
+  const hdcp=type==='hdcp';
+  const winners=(group,g)=>{const max=Math.max(...group.map(p=>game(p,g,hdcp)));return group.filter(p=>game(p,g,hdcp)===max);};
+  const round1=[0,2,4,6].map(i=>winners(players.slice(i,i+2),1));
+  const semi=[winners([...round1[0],...round1[1]],2),winners([...round1[2],...round1[3]],2)];
+  return [...semi[0],...semi[1]];
+}
+function calculate(state) {
+  const c=state.config, bowlers=state.bowlers, awards=[], pending=[];
+  if(!configured(c)) return {awards,pending:['Fix payout percentages before calculating payouts.']};
+  for(const type of ['hdcp','scratch']) {
+    for(const [i,ids] of state.brackets[type].entries()) {
+      const finalists=bracketFinalists(ids,type,bowlers);
+      if(!finalists){pending.push(type+' bracket #'+(i+1)+' needs all three scores for every entrant.');continue;}
+      const pool=cents(c[type+'Buyin'])*8;
+      const value=p=>game(p,3,type==='hdcp');
+      awards.push(...rankAwards(finalists,value,pool,[c[type+'First'],c[type+'Second']],(type==='hdcp'?'HDCP':'Scratch')+' bracket #'+(i+1)));
+    }
+  }
+  const high=bowlers.filter(b=>b.high);
+  if(high.length && high.every(complete)) {
+    awards.push(...rankAwards(high,b=>bestGame(b,true),cents(c.highBuyin)*high.length,[c.highPayout],'HDCP High Game Pot'));
+  } else if(high.length) pending.push('High Game Pot needs all three scores for every entrant.');
+  const quin=bowlers.filter(b=>b.quin);
+  if(quin.length && quin.every(complete)) {
+    const pool=cents(c.quinBuyin)*quin.length;
+    awards.push(...rankAwards(quin,b=>bestGame(b),pool,[c.quinGameFirst,c.quinGameSecond],'Quiniela high game'));
+    awards.push(...rankAwards(quin,b=>series(b),pool,[c.quinSeriesFirst,c.quinSeriesSecond],'Quiniela high series'));
+  } else if(quin.length) pending.push('Quiniela needs all three scores for every entrant.');
+  return {awards,pending};
+}
+function status(message) { document.getElementById('status').textContent=message; }
+function render() {
+  CONFIG_IDS.forEach(id=>{const el=document.getElementById(id); if(document.activeElement!==el) el.value=state.config[id];});
+  document.getElementById('rosterRows').innerHTML=state.bowlers.map(b=>'<tr><td>'+safe(b.name)+'</td><td>'+b.handicap+'</td><td>'+b.hdcpCount+'</td><td>'+b.scratchCount+'</td><td>'+(b.high?'Yes':'No')+'</td><td>'+(b.quin?'Yes':'No')+'</td><td><button class="secondary" data-edit="'+safe(b.id)+'">Edit</button> <button class="danger" data-remove="'+safe(b.id)+'">Remove</button></td></tr>').join('') || '<tr><td colspan="7">No bowlers registered yet.</td></tr>';
+  for(const type of ['hdcp','scratch']) {
+    document.getElementById(type+'Brackets').innerHTML=state.brackets[type].map((ids,i)=>'<div class="bracket"><strong>Bracket #'+(i+1)+'</strong><ol>'+ids.map(id=>{const b=state.bowlers.find(x=>x.id===id);return '<li>'+safe(b?.name||'Removed bowler')+'</li>';}).join('')+'</ol></div>').join('') || '<p class="hint">No complete brackets generated.</p>';
+  }
+  const unfilled=state.bowlers.flatMap(b=>['hdcp','scratch'].map(t=>{const n=b[t+'Count']-assignedCount(t,b.id);return n>0?b.name+': '+n+' pending '+t+' bracket '+(n===1?'entry':'entries'):null;})).filter(Boolean);
+  document.getElementById('bracketNotice').innerHTML=unfilled.length?'<p class="notice">'+safe(unfilled.join(' · '))+'</p>':'';
+  document.getElementById('scoreRows').innerHTML=state.bowlers.map(b=>'<tr><td>'+safe(b.name)+' (+'+b.handicap+')</td>'+[1,2,3].map(g=>'<td><input aria-label="'+safe(b.name)+' game '+g+'" data-score="'+safe(b.id)+'" data-game="g'+g+'" type="number" min="0" max="300" step="1" value="'+(b.scores['g'+g]??'')+'"></td>').join('')+'<td>'+(complete(b)?series(b):'—')+'</td><td>'+(complete(b)?series(b,true):'—')+'</td></tr>').join('')||'<tr><td colspan="6">Register bowlers first.</td></tr>';
+  const c=state.config;
+  const chargeRows=state.bowlers.map(b=>{
+    const h=assignedCount('hdcp',b.id),s=assignedCount('scratch',b.id),high=b.high?1:0,quin=b.quin?1:0;
+    const total=h*cents(c.hdcpBuyin)+s*cents(c.scratchBuyin)+high*cents(c.highBuyin)+quin*cents(c.quinBuyin);
+    return '<tr><td>'+safe(b.name)+'</td><td>'+h+' × '+money(cents(c.hdcpBuyin))+'</td><td>'+s+' × '+money(cents(c.scratchBuyin))+'</td><td>'+money(high*cents(c.highBuyin))+'</td><td>'+money(quin*cents(c.quinBuyin))+'</td><td class="money">'+money(total)+'</td></tr>';
+  });
+  document.getElementById('chargeRows').innerHTML=chargeRows.join('')||'<tr><td colspan="6">No registrations yet.</td></tr>';
+  document.getElementById('chargeNotice').innerHTML=unfilled.length?'<p class="notice">Pending bracket entries are excluded from charges: '+safe(unfilled.join(' · '))+'</p>':'';
+  const result=calculate(state);
+  document.getElementById('payoutNotice').innerHTML=result.pending.length?'<p class="notice">'+safe(result.pending.join(' · '))+'</p>':'';
+  document.getElementById('payoutRows').innerHTML=result.awards.map(a=>'<tr><td>'+safe(state.bowlers.find(b=>b.id===a.id)?.name||'Unknown')+'</td><td>'+safe(a.description)+'</td><td class="money">'+money(a.amount)+'</td></tr>').join('')||'<tr><td colspan="3">No payouts determined yet.</td></tr>';
+  document.getElementById('payoutTotal').textContent='Total awarded: '+money(result.awards.reduce((n,a)=>n+a.amount,0));
+}
+function resetForm() {
+  editingId=null;document.getElementById('bowlerForm').reset();document.getElementById('handicap').value=0;
+  document.getElementById('hdcpCount').value=1;document.getElementById('scratchCount').value=1;
+  document.getElementById('saveBowler').textContent='Add bowler';document.getElementById('cancelEdit').classList.add('hidden');toggleCounts();
+}
+function toggleCounts() {
+  for(const t of ['Hdcp','Scratch']) {
+    const on=document.getElementById('join'+t).checked;
+    document.getElementById(t.toLowerCase()+'CountWrap').classList.toggle('hidden',!on);
+    document.getElementById(t.toLowerCase()+'Count').required=on;
+  }
+}
+function setup() {
+  document.querySelectorAll('[data-tab]').forEach(btn=>btn.addEventListener('click',()=>{
+    document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===btn));
+    document.querySelectorAll('.panel').forEach(x=>x.classList.toggle('active',x.id===btn.dataset.tab));render();
+  }));
+  CONFIG_IDS.forEach(id=>document.getElementById(id).addEventListener('change',e=>{
+    const candidate={...state.config,[id]:num(e.target.value,NaN)};
+    if(!e.target.value || !configured(candidate)){status('Enter nonnegative amounts and keep each event’s payout percentages at 100% or less.');e.target.value=state.config[id];return;}
+    state.config=candidate;persist();render();status('Configuration saved.');
+  }));
+  ['Hdcp','Scratch'].forEach(t=>document.getElementById('join'+t).addEventListener('change',toggleCounts));
+  document.getElementById('bowlerForm').addEventListener('submit',e=>{
     e.preventDefault();
-    const newBowler = {
-        id: Date.now().toString(),
-        name: document.getElementById('addName').value.trim(),
-        hdcp: parseInt(document.getElementById('addHdcp').value) || 0,
-        hdcpCount: parseInt(document.getElementById('addHdcpCount').value) || 0,
-        scratchCount: parseInt(document.getElementById('addScratchCount').value) || 0,
-        scores: { g1: 0, g2: 0, g3: 0 }
-    };
-    
-    bowlers.push(newBowler);
-    e.target.reset();
-    document.getElementById('addName').focus(); 
-    renderRoster();
-});
-
-function removeBowler(id) {
-    bowlers = bowlers.filter(b => b.id !== id);
-    renderRoster();
+    const name=document.getElementById('name').value.trim(),handicap=Number(document.getElementById('handicap').value);
+    const hdcpCount=document.getElementById('joinHdcp').checked?Number(document.getElementById('hdcpCount').value):0;
+    const scratchCount=document.getElementById('joinScratch').checked?Number(document.getElementById('scratchCount').value):0;
+    if(!name || !Number.isInteger(handicap)||handicap<0||handicap>300||![hdcpCount,scratchCount].every(n=>Number.isInteger(n)&&n>=0)||
+      (document.getElementById('joinHdcp').checked&&hdcpCount<1)||(document.getElementById('joinScratch').checked&&scratchCount<1)){status('Check the name, handicap and bracket counts.');return;}
+    if(!editingId && state.bowlers.some(b=>b.name.toLowerCase()===name.toLowerCase())){status('A bowler with that name is already registered.');return;}
+    if(editingId && state.bowlers.some(b=>b.id!==editingId&&b.name.toLowerCase()===name.toLowerCase())){status('A bowler with that name is already registered.');return;}
+    const prior=state.bowlers.find(b=>b.id===editingId);
+    const bowler={id:editingId||String(Date.now())+Math.random().toString(36).slice(2),name,handicap,hdcpCount,scratchCount,high:document.getElementById('joinHigh').checked,quin:document.getElementById('joinQuin').checked,scores:prior?.scores||blankScores()};
+    if(prior) state.bowlers[state.bowlers.indexOf(prior)]=bowler;else state.bowlers.push(bowler);
+    // Registration changes invalidate the generated draw.
+    state.brackets={hdcp:[],scratch:[]};state.generated=false;
+    persist();resetForm();render();status('Bowler saved. Generate brackets again after roster changes.');
+  });
+  document.getElementById('cancelEdit').addEventListener('click',resetForm);
+  document.getElementById('rosterRows').addEventListener('click',e=>{
+    const edit=e.target.closest('[data-edit]'),remove=e.target.closest('[data-remove]');
+    if(edit){const b=state.bowlers.find(x=>x.id===edit.dataset.edit);if(!b)return;editingId=b.id;document.getElementById('name').value=b.name;document.getElementById('handicap').value=b.handicap;document.getElementById('joinHdcp').checked=b.hdcpCount>0;document.getElementById('joinScratch').checked=b.scratchCount>0;document.getElementById('joinHigh').checked=b.high;document.getElementById('joinQuin').checked=b.quin;document.getElementById('hdcpCount').value=b.hdcpCount||1;document.getElementById('scratchCount').value=b.scratchCount||1;document.getElementById('saveBowler').textContent='Save changes';document.getElementById('cancelEdit').classList.remove('hidden');toggleCounts();document.getElementById('name').focus();}
+    if(remove){const b=state.bowlers.find(x=>x.id===remove.dataset.remove);if(!b||!confirm('Remove '+b.name+' and regenerate brackets?'))return;state.bowlers=state.bowlers.filter(x=>x.id!==b.id);state.brackets={hdcp:[],scratch:[]};state.generated=false;persist();render();status('Bowler removed. Generate brackets again.');}
+  });
+  document.getElementById('generate').addEventListener('click',()=>{
+    state.brackets={hdcp:buildBrackets(state.bowlers,'hdcp'),scratch:buildBrackets(state.bowlers,'scratch')};state.generated=true;persist();render();status('Brackets generated.');
+  });
+  document.getElementById('scoreRows').addEventListener('change',e=>{
+    const id=e.target.dataset.score;if(!id)return;const b=state.bowlers.find(x=>x.id===id);if(!b)return;
+    const raw=e.target.value;
+    if(raw!==''&&(!Number.isInteger(Number(raw))||Number(raw)<0||Number(raw)>300)){status('Enter a whole game score from 0 to 300.');render();return;}
+    b.scores[e.target.dataset.game]=raw===''?null:Number(raw);persist();render();status('Score saved.');
+  });
+  toggleCounts();render();
 }
+if(typeof document!=='undefined') setup();
+if(typeof module!=='undefined') module.exports={fresh,buildBrackets,calculate,rankAwards,configured,complete,assignedCount};
 
-function renderRoster() {
-    const tbody = document.getElementById('rosterTableBody');
-    tbody.innerHTML = '';
-    
-    bowlers.forEach(b => {
-        tbody.innerHTML += `
-            <tr class="border-b border-slate-100 hover:bg-slate-50">
-                <td class="py-3 px-4 font-bold">${b.name}</td>
-                <td class="py-3 px-4">${b.hdcp}</td>
-                <td class="py-3 px-4 font-bold">${b.hdcpCount}</td>
-                <td class="py-3 px-4 font-bold">${b.scratchCount}</td>
-                <td class="py-3 px-4">
-                    <button onclick="removeBowler('${b.id}')" class="text-red-700 hover:text-white hover:bg-red-700 text-xs font-bold px-3 py-1 rounded border border-red-700 transition-colors">REMOVE</button>
-                </td>
-            </tr>
-        `;
-    });
-}
-
-// --- BRACKET GENERATOR (Greedy + Shuffle) ---
-function shuffleArray(array) {
-    for (let i = array.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [array[i], array[j]] = [array[j], array[i]];
-    }
-}
-
-function generateAllBrackets() {
-    brackets.hdcp = buildBrackets('hdcpCount');
-    brackets.scratch = buildBrackets('scratchCount');
-    
-    renderBrackets(brackets.hdcp, 'hdcpBracketDisplay', 'HDCP Bracket', 'hdcp');
-    renderBrackets(brackets.scratch, 'scratchBracketDisplay', 'Scratch Bracket', 'scratch');
-    switchTab('brackets');
-}
-
-function buildBrackets(countProperty) {
-    let pool = bowlers.map(b => ({ id: b.id, name: b.name, remaining: b[countProperty] })).filter(b => b.remaining > 0);
-    let generatedBrackets = [];
-
-    while (true) {
-        pool.sort((a, b) => b.remaining - a.remaining);
-        let available = pool.filter(b => b.remaining > 0);
-        if (available.length < 8) break; 
-        
-        let selectedForBracket = [];
-        for (let i = 0; i < 8; i++) {
-            selectedForBracket.push({ id: available[i].id, name: available[i].name });
-            available[i].remaining--; 
-        }
-        
-        shuffleArray(selectedForBracket);
-        generatedBrackets.push(selectedForBracket);
-    }
-    return generatedBrackets;
-}
-
-// --- VISUAL BRACKET RENDERER & SCORING ---
-function getBowlerScore(id, gameNum, type) {
-    let b = bowlers.find(x => x.id === id);
-    if (!b) return 0;
-    let score = b.scores[`g${gameNum}`] || 0;
-    if (type === 'hdcp' && score > 0) score += b.hdcp;
-    return score;
-}
-
-function getWinners(players, gameNum, type) {
-    if (!players || players.length === 0) return [];
-    let scoredPlayers = players.map(p => ({ p, score: getBowlerScore(p.id, gameNum, type) }));
-    let maxScore = Math.max(...scoredPlayers.map(sp => sp.score));
-    if (maxScore === 0) return []; 
-    return scoredPlayers.filter(sp => sp.score === maxScore).map(sp => sp.p);
-}
-
-function renderMatch(players, gameNum, winners, type) {
-    if (players.length === 0) {
-        return `<div class="match-group"><div class="pending-box">Pending</div></div>`;
-    }
-    return `
-        <div class="match-group">
-            ${players.map(p => `
-                <div class="player-slot ${winners.some(w => w.id === p.id) ? 'winner' : ''}">
-                    <div class="player-name">${p.name}</div>
-                    <div class="player-score">${getBowlerScore(p.id, gameNum, type) || '-'}</div>
-                </div>
-            `).join('')}
-        </div>
-    `;
-}
-
-function renderBrackets(bracketList, elementId, titlePrefix, type) {
-    const container = document.getElementById(elementId);
-    if (bracketList.length === 0) {
-        container.innerHTML = `<p class="text-slate-500 italic text-center py-4 bg-white border border-slate-200 rounded">Not enough entries.</p>`;
-        return;
-    }
-
-    let html = '';
-    
-    bracketList.forEach((bracket, index) => {
-        let r1 = bracket; 
-        
-        let m1 = [r1[0], r1[1]]; let m2 = [r1[2], r1[3]];
-        let m3 = [r1[4], r1[5]]; let m4 = [r1[6], r1[7]];
-
-        let m1_w = getWinners(m1, 1, type); let m2_w = getWinners(m2, 1, type);
-        let m3_w = getWinners(m3, 1, type); let m4_w = getWinners(m4, 1, type);
-
-        let m5 = [...m1_w, ...m2_w]; let m6 = [...m3_w, ...m4_w];
-        let m5_w = getWinners(m5, 2, type); let m6_w = getWinners(m6, 2, type);
-
-        let m7 = [...m5_w, ...m6_w];
-        let champs = getWinners(m7, 3, type);
-
-        html += `
-        <div class="mb-12">
-            <h4 class="font-black text-[#0f172a] text-md mb-2 tracking-wide">${titlePrefix} #${index + 1}</h4>
-            
-            <div class="bracket-container">
-                <div class="bracket-column col-g1">
-                    <div class="text-[10px] font-bold text-slate-400 uppercase mb-1">Game 1</div>
-                    ${renderMatch(m1, 1, m1_w, type)}
-                    ${renderMatch(m2, 1, m2_w, type)}
-                    ${renderMatch(m3, 1, m3_w, type)}
-                    ${renderMatch(m4, 1, m4_w, type)}
-                </div>
-
-                <div class="bracket-column col-g2">
-                    <div class="text-[10px] font-bold text-slate-400 uppercase mb-1">Game 2 (Semifinals)</div>
-                    ${renderMatch(m5, 2, m5_w, type)}
-                    ${renderMatch(m6, 2, m6_w, type)}
-                </div>
-
-                <div class="bracket-column col-finals">
-                    <div class="text-[10px] font-bold text-slate-400 uppercase mb-1">Game 3 (Finals)</div>
-                    <div class="match-group justify-center h-full">
-                        ${champs.length > 0 
-                            ? champs.map(c => `
-                                <div class="player-slot champion">
-                                    <div class="player-name">Final Winner</div>
-                                    <div class="player-score">${c.name}</div>
-                                </div>
-                              `).join('')
-                            : `<div class="player-slot champion" style="border-color:#e2e8f0; background:white; color:#94a3b8;"><div class="player-name" style="color:#94a3b8;">Pending</div></div>`
-                        }
-                    </div>
-                </div>
-            </div>
-        </div>
-        `;
-    });
-    container.innerHTML = html;
-}
-
-// --- CENTRAL SCORING SYSTEM ---
-function renderScoringTable() {
-    const tbody = document.getElementById('scoringTableBody');
-    tbody.innerHTML = '';
-    
-    let sortedBowlers = [...bowlers].sort((a, b) => a.name.localeCompare(b.name));
-    
-    sortedBowlers.forEach(b => {
-        let scrSeries = (b.scores.g1 + b.scores.g2 + b.scores.g3);
-        let hdcpSeries = scrSeries > 0 ? scrSeries + (b.hdcp * 3) : 0;
-        
-        tbody.innerHTML += `
-            <tr class="border-b border-slate-200 hover:bg-[#fdfbf7]">
-                <td class="py-3 px-4 flex items-center gap-2">
-                    <span>${b.name}</span>
-                    <span class="bg-[#d4af37] text-white text-[10px] px-2 py-0.5 rounded font-black">+${b.hdcp}</span>
-                </td>
-                <td class="py-2 px-2 text-center"><input type="number" onchange="updateScore('${b.id}', 'g1', this.value)" value="${b.scores.g1 || ''}" class="gold-input w-16 px-1 py-1 rounded text-center"></td>
-                <td class="py-2 px-2 text-center"><input type="number" onchange="updateScore('${b.id}', 'g2', this.value)" value="${b.scores.g2 || ''}" class="gold-input w-16 px-1 py-1 rounded text-center"></td>
-                <td class="py-2 px-2 text-center"><input type="number" onchange="updateScore('${b.id}', 'g3', this.value)" value="${b.scores.g3 || ''}" class="gold-input w-16 px-1 py-1 rounded text-center"></td>
-                <td class="py-3 px-2 text-center text-slate-500">${scrSeries > 0 ? scrSeries : '-'}</td>
-                <td class="py-3 px-2 text-center text-[#7a141b] font-black">${hdcpSeries > 0 ? hdcpSeries : '-'}</td>
-            </tr>
-        `;
-    });
-}
-
-function updateScore(id, game, val) {
-    let bowler = bowlers.find(b => b.id === id);
-    if(bowler) {
-        bowler.scores[game] = parseInt(val) || 0;
-    }
-}
-
-function calculateWinners() {
-    renderScoringTable(); 
-    renderBrackets(brackets.hdcp, 'hdcpBracketDisplay', 'HDCP Bracket', 'hdcp');
-    renderBrackets(brackets.scratch, 'scratchBracketDisplay', 'Scratch Bracket', 'scratch');
-    switchTab('brackets');
-}
