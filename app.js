@@ -8,14 +8,104 @@ const cents = value => Math.round(Number(value) * 100);
 const safe = value => String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const num = (value, fallback=0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const blankScores = () => ({g1:null,g2:null,g3:null});
-function fresh() { return {config:{...DEFAULT_CONFIG},bowlers:[],brackets:{hdcp:[],scratch:[]},generated:false,highGenerated:false,pairs:[],pairsGenerated:false}; }
+const ES = {
+  'Registration, brackets, scoring and payouts':'Registro, llaves, puntuación y premios',
+  '/ MANAGER':'/ ADMINISTRADOR',
+  'Registration & configuration':'Registro y configuración','Brackets':'Llaves','High Game':'Juego alto',
+  'Doubles':'Parejas','Scoring':'Puntuación','Reports & payouts':'Reportes y premios',
+  'Buy-ins and payouts':'Inscripciones y premios','Buy-ins are per bowler or bracket entry. Payout percentages apply to each collected pool. Unallocated funds stay with the tournament.':'Los costos son por jugador o por entrada a una llave. Los porcentajes se aplican a cada fondo recaudado. Los fondos no asignados quedan para el torneo.',
+  'Handicap bracket':'Llave con hándicap','Scratch bracket':'Llave scratch','Handicap High Game Pot':'Pozo de juego alto con hándicap',
+  'Buy-in ($)':'Inscripción ($)','1st place (%)':'1.er lugar (%)','2nd place (%)':'2.º lugar (%)',
+  'Winner payout (%)':'Premio al ganador (%)','Highest game plus handicap wins. Tied winners split the payout equally.':'Gana el juego más alto con hándicap. Si hay empate, se divide el premio.',
+  'Buy-in per team entry, per bowler ($)':'Inscripción por equipo, por jugador ($)',
+  'Pay highest combined game':'Premiar el juego combinado más alto','High Game payout (%)':'Premio de juego alto (%)',
+  'Pay highest combined series':'Premiar la serie combinada más alta','Series payout (%)':'Premio de serie (%)',
+  "Each partner's handicap is included in every game. You may pay either prize or both. Enabled payouts together cannot exceed 100% of Doubles buy-ins.":'Se suma el hándicap de ambos jugadores en cada juego. Puede premiar uno o ambos resultados. Los premios activos no pueden superar el 100% de las inscripciones de Parejas.',
+  'Register a bowler':'Registrar jugador','Bracket numbers are the maximum each bowler is willing to play. Doubles charges depend on the teams added in the Doubles tab.':'Los números de llaves son el máximo que cada jugador desea jugar. El costo de Parejas depende de los equipos agregados en esa pestaña.',
+  'Name':'Nombre','Handicap per game':'Hándicap por juego','Max handicap brackets':'Máximo de llaves con hándicap','Max scratch brackets':'Máximo de llaves scratch',
+  'Handicap brackets':'Llaves con hándicap','Scratch brackets':'Llaves scratch','High Game Pot':'Pozo de juego alto',
+  'Add bowler':'Agregar jugador','Save changes':'Guardar cambios','Cancel edit':'Cancelar edición','Roster':'Participantes',
+  'Bowler':'Jugador','Handicap':'Hándicap','Max HDCP':'Máx. hándicap','Max scratch':'Máx. scratch','Doubles teams':'Equipos de Parejas',
+  'Actions':'Acciones','Edit':'Editar','Remove':'Eliminar','Yes':'Sí','No':'No',
+  "The draw maximizes eight-slot brackets within each bowler's limit. With seven entrants, each bracket has one first-round bye. Fewer than seven entrants cannot form a bracket. Unused willingness is not charged.":'El sorteo maximiza las llaves de ocho lugares sin superar el límite de cada jugador. Con siete participantes hay un pase libre por llave. Con menos de siete no se forma una llave. Los lugares no usados no se cobran.',
+  'Generate brackets':'Generar llaves','Handicap brackets':'Llaves con hándicap','Scratch brackets':'Llaves scratch',
+  'GAME 1':'JUEGO 1','GAME 2 · SEMIFINAL':'JUEGO 2 · SEMIFINAL','GAME 3 · FINAL':'JUEGO 3 · FINAL','WINNER':'GANADOR',
+  'Blue circle = winner   •   Red X = loser   •   BYE = automatic advance':'Círculo azul = ganador   •   X roja = perdedor   •   LIBRE = avance automático',
+  'BYE':'LIBRE','PENDING':'PENDIENTE',
+  'All three games are shown with handicap added. A green circle marks the leader of each game. The highest single handicap game wins the pot; ties share the payout.':'Se muestran los tres juegos con hándicap. Un círculo verde marca al líder de cada juego. El juego individual más alto gana el pozo; los empates comparten el premio.',
+  'Generate / update standings':'Generar / actualizar resultados','Best game':'Mejor juego','Pot result':'Resultado del pozo',
+  'Add each two-bowler team here. A bowler may play on multiple different teams and pays one buy-in for each team. Both bowlers must already be in the roster.':'Agregue aquí cada equipo de dos jugadores. Un jugador puede participar en varios equipos distintos y paga una inscripción por cada uno. Ambos deben estar registrados.',
+  'First bowler':'Primer jugador','Second bowler':'Segundo jugador','Add Doubles Team':'Agregar pareja','Please register bowler.':'Por favor, registre al jugador.',
+  "Enter each bowler's scratch games once. Those scores update every bracket and Doubles team that includes that bowler. Handicap is added per game.":'Ingrese una vez los juegos scratch de cada jugador. Los resultados actualizan todas sus llaves y parejas. El hándicap se suma por juego.',
+  'Scores':'Puntuaciones','Game 1':'Juego 1','Game 2':'Juego 2','Game 3':'Juego 3','Scratch series':'Serie scratch','HDCP series':'Serie con hándicap',
+  'Doubles match totals':'Totales de Parejas','Team':'Equipo','Combined series':'Serie combinada','Combined':'Combinado','Series':'Serie',
+  'Tournament summary':'Resumen del torneo','Event columns show winnings minus buy-ins. Red is a loss; green is a gain. Overall balance is total winnings minus total charges.':'Las columnas por evento muestran premios menos inscripciones. Rojo indica pérdida y verde ganancia. El saldo total es premios menos cargos.',
+  'Why they pay':'Motivo del cargo','Total due':'Total a pagar','Winnings and why':'Premios y motivo','Total won':'Total ganado','Scratch':'Scratch','Balance':'Saldo',
+  'Total charges':'Cargos totales','Total winnings':'Premios totales','Combined bowler balance':'Saldo combinado de jugadores',
+  'Competition data':'Datos de la competencia',"Starting a new competition downloads a JSON backup, then clears this browser's tournament data after you confirm the download is saved.":'Iniciar una competencia descarga una copia JSON y después borra los datos de este navegador cuando confirme que se guardó.',
+  'Start New Competition':'Iniciar nueva competencia','Restore a JSON backup':'Restaurar copia JSON','Print report':'Imprimir reporte',
+  'No Doubles teams added yet.':'Todavía no hay parejas agregadas.','Remove team':'Eliminar equipo',
+  'Add a team above to see its game results.':'Agregue una pareja arriba para ver sus resultados.',
+  'Payout is pending until every entrant has all three scores.':'El premio está pendiente hasta que todos tengan tres puntuaciones.',
+  'No bowlers registered for High Game Pot.':'No hay jugadores registrados para el pozo de juego alto.',
+  'No brackets generated. At least seven different bowlers must select this event.':'No se generaron llaves. Se necesitan al menos siete jugadores distintos en este evento.',
+  'No participants.':'Sin participantes.','No winnings':'Sin premios','No entries':'Sin inscripciones',
+  'No bowlers registered yet.':'Todavía no hay jugadores registrados.','No Doubles teams added yet.':'Todavía no hay parejas agregadas.',
+  'Payouts appear after every team bowler has all three scores.':'Los premios aparecerán cuando todos los integrantes tengan tres puntuaciones.',
+  'Doubles results':'Resultados de Parejas','Best combined game:':'Mejor juego combinado:',
+  'Doubles bowlers without a team are not charged.':'Los jugadores sin pareja no pagan inscripción.',
+  'Generate brackets to determine actual bracket charges.':'Genere las llaves para calcular los cargos reales.',
+  'Bowler saved. Generate brackets again after roster changes.':'Jugador guardado. Genere las llaves de nuevo después de cambiar la lista.',
+  'Doubles team added.':'Pareja agregada.','Doubles team removed.':'Pareja eliminada.',
+  'A Doubles team needs two different bowlers.':'Una pareja necesita dos jugadores diferentes.',
+  'This Doubles team is already registered.':'Esta pareja ya está registrada.',
+  'Score saved.':'Puntuación guardada.','Configuration saved.':'Configuración guardada.',
+  'High Game standings updated.':'Resultados de juego alto actualizados.',
+  'Competition data was kept.':'Se conservaron los datos de la competencia.',
+  'Backup restored.':'Copia restaurada.','Could not read the JSON backup.':'No se pudo leer la copia JSON.',
+  'This is not a valid Monster Bowling backup.':'Esta copia JSON de Monster Bowling no es válida.',
+  'Download SVG image':'Descargar imagen SVG',
+  'New competition started. Previous data is in your JSON backup.':'Nueva competencia iniciada. Los datos anteriores están en la copia JSON.',
+  'Backup was not saved. Competition data was kept.':'No se guardó la copia. Se conservaron los datos.',
+  'Check the buy-ins and payout percentages. Keep enabled Doubles payouts at 100% or less.':'Revise las inscripciones y los porcentajes. Los premios activos de Parejas no pueden superar el 100%.',
+  'Doubles needs all three scores for every team bowler.':'Parejas necesita las tres puntuaciones de cada integrante.'
+};
+const originalText=new WeakMap();
+function translateUI() {
+  if(typeof document==='undefined') return;
+  const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
+  while(walker.nextNode()) {
+    const node=walker.currentNode;if(['SCRIPT','STYLE','OPTION'].includes(node.parentElement?.tagName))continue;
+    if(!originalText.has(node)) originalText.set(node,node.nodeValue);
+    const original=originalText.get(node),trimmed=original.trim();
+    let translated=state.language==='es'?(ES[trimmed]||original):original;
+    if(state.language==='es'&&translated===original) {
+      translated=original.replace(/Team #(\d+)/g,'Equipo n.º $1').replace(/Pair #(\d+)/g,'Pareja n.º $1')
+        .replace(/Doubles high game/g,'Juego alto de Parejas').replace(/Doubles series/g,'Serie de Parejas')
+        .replace(/Doubles team(s)?/g,(_,plural)=>plural?'equipos de Parejas':'equipo de Parejas')
+        .replace(/Handicap bracket(s)?/g,(_,plural)=>plural?'llaves con hándicap':'llave con hándicap')
+        .replace(/Scratch bracket(s)?/g,(_,plural)=>plural?'llaves scratch':'llave scratch')
+        .replace(/HDCP High Game Pot/g,'Pozo de juego alto con hándicap')
+        .replace(/Registered for Doubles but not on a team, so not charged:/g,'Registrados para Parejas pero sin equipo, por lo que no pagan:')
+        .replace(/Unused bracket willingness is not charged:/g,'Los lugares no usados en las llaves no se cobran:')
+        .replace(/Willingness above the available full brackets:/g,'Lugares ofrecidos por encima de las llaves disponibles:')
+        .replace(/Best combined game:/g,'Mejor juego combinado:')
+        .replace(/Winning game:/g,'Juego ganador:').replace(/Payout:/g,'Premio:')
+        .replace(/Balances may change when pending results are entered\./g,'Los saldos pueden cambiar cuando se ingresen los resultados pendientes.')
+        .replace(/No winnings/g,'Sin premios').replace(/No entries/g,'Sin inscripciones');
+    }
+    node.nodeValue=translated===original?original:original.replace(trimmed,translated);
+  }
+  document.documentElement.lang=state.language;
+}
+function fresh() { return {config:{...DEFAULT_CONFIG},bowlers:[],brackets:{hdcp:[],scratch:[]},generated:false,highGenerated:false,pairs:[],pairsGenerated:false,language:'en'}; }
 function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY));
     if (!raw || !Array.isArray(raw.bowlers)) return fresh();
     const config={...DEFAULT_CONFIG};
     CONFIG_IDS.forEach(id=>{if(raw.config && Object.hasOwn(raw.config,id)) config[id]=raw.config[id];});
-    return {config,bowlers:raw.bowlers.map(({quin,...b})=>({...b,high:!!b.high,pairs:!!b.pairs,scores:{...blankScores(),...b.scores}})),brackets:raw.brackets || {hdcp:[],scratch:[]},generated:!!raw.generated,highGenerated:!!raw.highGenerated,pairs:Array.isArray(raw.pairs)?raw.pairs:[],pairsGenerated:!!raw.pairsGenerated};
+    return {config,bowlers:raw.bowlers.map(({quin,...b})=>({...b,high:!!b.high,pairs:!!b.pairs,scores:{...blankScores(),...b.scores}})),brackets:raw.brackets || {hdcp:[],scratch:[]},generated:!!raw.generated,highGenerated:!!raw.highGenerated,pairs:Array.isArray(raw.pairs)?raw.pairs:[],pairsGenerated:!!raw.pairsGenerated,language:raw.language==='es'?'es':'en'};
   } catch { return fresh(); }
 }
 let state = typeof localStorage === 'undefined' ? fresh() : load();
@@ -63,11 +153,15 @@ function buildBrackets(bowlers,type) {
   });
   return result.map(ids=>shuffle(spots===7?[...ids,null]:ids));
 }
-function buildPairs(bowlers) {
-  const ids=shuffle(bowlers.filter(b=>b.pairs).map(b=>b.id));
-  const pairs=[];
-  for(let i=0;i+1<ids.length;i+=2) pairs.push([ids[i],ids[i+1]]);
-  return pairs;
+function pairCount(data,id) { return data.pairs.filter(ids=>ids.includes(id)).length; }
+function addTeamByNames(data,name1,name2) {
+  const find=name=>data.bowlers.find(b=>b.name.toLocaleLowerCase()===name.trim().toLocaleLowerCase());
+  const a=find(name1),b=find(name2);
+  if(!a||!b) return 'not_registered';
+  if(a.id===b.id) return 'same_bowler';
+  if(data.pairs.some(ids=>ids.includes(a.id)&&ids.includes(b.id))) return 'duplicate_team';
+  data.pairs.push([a.id,b.id]);a.pairs=true;b.pairs=true;data.pairsGenerated=true;
+  return 'added';
 }
 function complete(b) { return ['g1','g2','g3'].every(g=>b.scores[g]!==null && b.scores[g]!=='' && Number.isFinite(Number(b.scores[g]))); }
 function hasGame(b,g) { return b.scores['g'+g]!==null && b.scores['g'+g]!=='' && Number.isFinite(Number(b.scores['g'+g])); }
@@ -186,9 +280,9 @@ function calculate(state) {
   const teams=pairedTeams(state);
   if(teams.length && teams.every(team=>team.every(complete))) {
     const pool=cents(c.pairsBuyin)*teams.length*2;
-    if(c.pairsHighEnabled) awards.push(...pairAwards(teams,pairBest,Math.round(pool*c.pairsGamePayout/100),'Parejas high game'));
-    if(c.pairsSeriesEnabled) awards.push(...pairAwards(teams,pairSeries,Math.round(pool*c.pairsSeriesPayout/100),'Parejas series'));
-  } else if(teams.length) pending.push('Parejas needs all three scores for every paired bowler.');
+    if(c.pairsHighEnabled) awards.push(...pairAwards(teams,pairBest,Math.round(pool*c.pairsGamePayout/100),'Doubles high game'));
+    if(c.pairsSeriesEnabled) awards.push(...pairAwards(teams,pairSeries,Math.round(pool*c.pairsSeriesPayout/100),'Doubles series'));
+  } else if(teams.length) pending.push('Doubles needs all three scores for every team bowler.');
   return {awards,pending};
 }
 function reportSummary(data) {
@@ -196,12 +290,12 @@ function reportSummary(data) {
   const count=(type,id)=>(data.brackets[type]||[]).reduce((n,ids)=>n+ids.filter(x=>x===id).length,0);
   const rows=data.bowlers.map(b=>{
     const h=count('hdcp',b.id), s=count('scratch',b.id);
-    const paired=(data.pairs||[]).some(ids=>ids.includes(b.id));
+    const paired=(data.pairs||[]).filter(ids=>ids.includes(b.id)).length;
     const charges=[
       ...(h?[{category:'hdcp',label:h+' handicap bracket'+(h===1?'':'s')+' × '+money(cents(c.hdcpBuyin)),amount:h*cents(c.hdcpBuyin)}]:[]),
       ...(s?[{category:'scratch',label:s+' scratch bracket'+(s===1?'':'s')+' × '+money(cents(c.scratchBuyin)),amount:s*cents(c.scratchBuyin)}]:[]),
       ...(b.high?[{category:'high',label:'Handicap High Game Pot',amount:cents(c.highBuyin)}]:[]),
-      ...(paired?[{category:'pairs',label:'Parejas',amount:cents(c.pairsBuyin)}]:[])
+      ...(paired?[{category:'pairs',label:paired+' Doubles team'+(paired===1?'':'s')+' × '+money(cents(c.pairsBuyin)),amount:paired*cents(c.pairsBuyin)}]:[])
     ];
     const winnings=result.awards.filter(a=>a.id===b.id);
     const due=charges.reduce((n,x)=>n+x.amount,0), won=winnings.reduce((n,x)=>n+x.amount,0);
@@ -213,7 +307,7 @@ function reportSummary(data) {
 }
 function balanceText(amount) { return (amount<0?'−':amount>0?'+':'')+money(Math.abs(amount)); }
 function balanceClass(amount) { return amount<0?'balance-negative':amount>0?'balance-positive':'balance-zero'; }
-function status(message) { document.getElementById('status').textContent=message; }
+function status(message) { document.getElementById('status').textContent=message;translateUI(); }
 function marked(value,winner) { return winner?'<span class="winner-circle">'+value+'</span>':String(value); }
 function renderHighGame() {
   const players=state.bowlers.filter(b=>b.high);
@@ -234,14 +328,10 @@ function renderHighGame() {
 }
 function renderPairs() {
   const interested=state.bowlers.filter(b=>b.pairs), teams=pairedTeams(state);
-  if(!state.pairsGenerated) {
-    document.getElementById('pairsNotice').innerHTML='<p class="hint">'+interested.length+' bowlers registered. Generate pairs to assign teams and calculate charges.</p>';
-    document.getElementById('pairsRows').innerHTML='';
-    document.getElementById('pairsResult').innerHTML='';
-    return;
-  }
+  document.getElementById('registeredBowlers').innerHTML=state.bowlers.map(b=>'<option value="'+safe(b.name)+'"></option>').join('');
+  document.getElementById('teamList').innerHTML=teams.map((team,i)=>'<li>'+safe(team.map(b=>b.name).join(' & '))+' <button type="button" class="danger no-print" data-remove-pair="'+i+'">Remove team</button></li>').join('')||'<li>No Doubles teams added yet.</li>';
   const pairedIds=new Set(state.pairs.flat()), unmatched=interested.filter(b=>!pairedIds.has(b.id));
-  document.getElementById('pairsNotice').innerHTML=unmatched.length?'<p class="notice">Unpaired and not charged: '+safe(unmatched.map(b=>b.name).join(', '))+'.</p>':'';
+  document.getElementById('pairsNotice').innerHTML=unmatched.length?'<p class="notice">Registered for Doubles but not on a team, so not charged: '+safe(unmatched.map(b=>b.name).join(', '))+'.</p>':'';
   const ready=[1,2,3].map(g=>teams.length>0&&teams.every(t=>t.every(b=>hasGame(b,g))));
   const tops=[1,2,3].map((g,i)=>ready[i]?Math.max(...teams.map(t=>pairGame(t,g))):null);
   const finished=teams.length>0&&teams.every(t=>t.every(complete));
@@ -252,33 +342,35 @@ function renderPairs() {
     const total='<tr class="pair-total"><td>Combined</td>'+[1,2,3].map((g,j)=>'<td>'+(team.every(b=>hasGame(b,g))?marked(pairGame(team,g),ready[j]&&pairGame(team,g)===tops[j]):'—')+'</td>').join('')+'<td>'+(team.every(complete)?marked(pairSeries(team),finished&&state.config.pairsSeriesEnabled&&pairSeries(team)===bestSeriesScore):'—')+'</td></tr>';
     const high=team.every(complete)?'<p>Best combined game: '+marked(pairBest(team),finished&&state.config.pairsHighEnabled&&pairBest(team)===bestGameScore)+'</p>':'';
     return '<div class="pair-card"><h3>Pair #'+(i+1)+': '+safe(team.map(b=>b.name).join(' & '))+'</h3><div class="table-wrap"><table class="event-table"><thead><tr><th>Bowler</th><th>Game 1</th><th>Game 2</th><th>Game 3</th><th>Series</th></tr></thead><tbody>'+team.map(row).join('')+total+'</tbody></table></div>'+high+'</div>';
-  }).join('')||'<p class="notice">At least two Parejas entrants are needed to make a team.</p>';
+  }).join('')||'<p class="hint">Add a team above to see its game results.</p>';
   const payouts=calculate(state).awards.filter(a=>a.category==='pairs');
-  document.getElementById('pairsResult').innerHTML=finished?'<h3>Parejas results</h3><p>'+payouts.map(a=>safe(state.bowlers.find(b=>b.id===a.id)?.name||'Unknown')+' — '+safe(a.description)+' '+money(a.amount)).join('<br>')+'</p>':'<p class="hint">Payouts appear after every paired bowler has all three scores.</p>';
+  document.getElementById('pairsResult').innerHTML=finished?'<h3>Doubles results</h3><p>'+payouts.map(a=>safe(state.bowlers.find(b=>b.id===a.id)?.name||'Unknown')+' — '+safe(a.description)+' '+money(a.amount)).join('<br>')+'</p>':teams.length?'<p class="hint">Payouts appear after every team bowler has all three scores.</p>':'';
 }
 function render() {
   CONFIG_IDS.forEach(id=>{const el=document.getElementById(id); if(el.type==='checkbox') el.checked=!!state.config[id]; else if(document.activeElement!==el) el.value=state.config[id];});
-  document.getElementById('rosterRows').innerHTML=state.bowlers.map(b=>'<tr><td>'+safe(b.name)+'</td><td>'+b.handicap+'</td><td>'+b.hdcpCount+'</td><td>'+b.scratchCount+'</td><td>'+(b.high?'Yes':'No')+'</td><td>'+(b.pairs?'Yes':'No')+'</td><td><button class="secondary" data-edit="'+safe(b.id)+'">Edit</button> <button class="danger" data-remove="'+safe(b.id)+'">Remove</button></td></tr>').join('') || '<tr><td colspan="7">No bowlers registered yet.</td></tr>';
+  document.getElementById('language').value=state.language;
+  document.getElementById('rosterRows').innerHTML=state.bowlers.map(b=>'<tr><td>'+safe(b.name)+'</td><td>'+b.handicap+'</td><td>'+b.hdcpCount+'</td><td>'+b.scratchCount+'</td><td>'+(b.high?'Yes':'No')+'</td><td>'+pairCount(state,b.id)+'</td><td><button class="secondary" data-edit="'+safe(b.id)+'">Edit</button> <button class="danger" data-remove="'+safe(b.id)+'">Remove</button></td></tr>').join('') || '<tr><td colspan="7">No bowlers registered yet.</td></tr>';
   for(const type of ['hdcp','scratch']) {
     document.getElementById(type+'Brackets').innerHTML=state.brackets[type].map((ids,i)=>'<div class="bracket"><div class="bracket-head"><strong>'+(type==='hdcp'?'Handicap':'Scratch')+' bracket #'+(i+1)+'</strong><button class="secondary no-print" data-download="'+type+':'+i+'">Download SVG image</button></div><div class="bracket-scroll">'+bracketGraphic(ids,type,state.bowlers,i)+'</div></div>').join('') || '<p class="hint">No brackets generated. At least seven different bowlers must select this event.</p>';
   }
   const unused=state.bowlers.flatMap(b=>['hdcp','scratch'].map(t=>{const n=b[t+'Count']-assignedCount(t,b.id);return n>0?b.name+': '+n+' unused '+t+' '+(n===1?'spot':'spots'):null;})).filter(Boolean);
   document.getElementById('bracketNotice').innerHTML=state.generated&&unused.length?'<p class="notice">Willingness above the available full brackets: '+safe(unused.join(' · '))+'</p>':'';
   document.getElementById('scoreRows').innerHTML=state.bowlers.map(b=>'<tr><td>'+safe(b.name)+' (+'+b.handicap+')</td>'+[1,2,3].map(g=>'<td><input aria-label="'+safe(b.name)+' game '+g+'" data-score="'+safe(b.id)+'" data-game="g'+g+'" type="number" min="0" max="300" step="1" value="'+(b.scores['g'+g]??'')+'"></td>').join('')+'<td>'+(complete(b)?series(b):'—')+'</td><td>'+(complete(b)?series(b,true):'—')+'</td></tr>').join('')||'<tr><td colspan="6">Register bowlers first.</td></tr>';
+  document.getElementById('scorePairsRows').innerHTML=pairedTeams(state).map((team,i)=>'<tr><td>Team #'+(i+1)+' — '+safe(team.map(b=>b.name).join(' & '))+'</td>'+[1,2,3].map(g=>'<td>'+(team.every(b=>hasGame(b,g))?pairGame(team,g):'—')+'</td>').join('')+'<td>'+(team.every(complete)?pairBest(team):'—')+'</td><td>'+(team.every(complete)?pairSeries(team):'—')+'</td></tr>').join('')||'<tr><td colspan="6">No Doubles teams added yet.</td></tr>';
   renderHighGame();
   renderPairs();
   const report=reportSummary(state);
   const notes=[
     ...(!state.generated&&state.bowlers.some(b=>b.hdcpCount||b.scratchCount)?['Generate brackets to determine actual bracket charges.']:[]),
     ...(state.generated&&unused.length?['Unused bracket willingness is not charged: '+unused.join(' · ')]:[]),
-    ...(!state.pairsGenerated&&state.bowlers.some(b=>b.pairs)?['Generate Parejas to determine pair charges.']:[]),
-    ...(state.pairsGenerated&&state.bowlers.some(b=>b.pairs&&!state.pairs.flat().includes(b.id))?['Unpaired Parejas entrants are not charged.']:[]),
+    ...(state.bowlers.some(b=>b.pairs&&!state.pairs.flat().includes(b.id))?['Doubles bowlers without a team are not charged.']:[]),
     ...report.pending
   ];
   document.getElementById('reportNotice').innerHTML=notes.length?'<p class="notice">'+safe(notes.join(' · '))+(report.pending.length?' Balances may change when pending results are entered.':'')+'</p>':'';
   const list=(items,label)=>items.length?'<ul class="breakdown">'+items.map(x=>'<li>'+safe(x.label||x.description)+' <span class="detail-amount">'+money(x.amount)+'</span></li>').join('')+'</ul>':'<span class="hint">'+label+'</span>';
   document.getElementById('reportRows').innerHTML=report.rows.map(r=>'<tr><td><strong>'+safe(r.name)+'</strong></td><td>'+list(r.charges,'No entries')+'</td><td class="money">'+money(r.due)+'</td><td>'+list(r.winnings,'No winnings')+'</td><td class="money">'+money(r.won)+'</td>'+['hdcp','scratch','high','pairs'].map(t=>'<td class="money '+balanceClass(r.eventNet[t])+'">'+balanceText(r.eventNet[t])+'</td>').join('')+'<td class="money '+balanceClass(r.net)+'">'+balanceText(r.net)+'</td></tr>').join('')||'<tr><td colspan="10">No bowlers registered yet.</td></tr>';
   document.getElementById('reportTotals').innerHTML='<div>Total charges<strong>'+money(report.collected)+'</strong></div><div>Total winnings<strong>'+money(report.awarded)+'</strong></div><div>Combined bowler balance<strong class="'+balanceClass(report.net)+'">'+balanceText(report.net)+'</strong></div>';
+  translateUI();
 }
 function resetForm() {
   editingId=null;document.getElementById('bowlerForm').reset();document.getElementById('handicap').value=0;
@@ -305,7 +397,7 @@ function validBackup(packageData) {
     ids.add(b.id);
   }
   return [...data.brackets.hdcp,...data.brackets.scratch].every(bracket=>Array.isArray(bracket)&&bracket.length===8&&bracket.every(id=>id===null||ids.has(id)))&&
-    data.pairs.every(pair=>Array.isArray(pair)&&pair.length===2&&pair.every(id=>ids.has(id)));
+    data.pairs.every(pair=>Array.isArray(pair)&&pair.length===2&&pair[0]!==pair[1]&&pair.every(id=>ids.has(id)));
 }
 async function downloadBackup() {
   const json=JSON.stringify(backupPackage(state),null,2),name='monster-bowling-backup-'+new Date().toISOString().slice(0,10)+'.json';
@@ -320,6 +412,7 @@ async function downloadBackup() {
   return false;
 }
 function setup() {
+  document.getElementById('language').addEventListener('change',e=>{state.language=e.target.value==='es'?'es':'en';persist();render();});
   document.querySelectorAll('[data-tab]').forEach(btn=>btn.addEventListener('click',()=>{
     document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===btn));
     document.querySelectorAll('.panel').forEach(x=>x.classList.toggle('active',x.id===btn.dataset.tab));render();
@@ -327,7 +420,7 @@ function setup() {
   CONFIG_IDS.forEach(id=>document.getElementById(id).addEventListener('change',e=>{
     const value=e.target.type==='checkbox'?e.target.checked:num(e.target.value,NaN);
     const candidate={...state.config,[id]:value};
-    if((e.target.type!=='checkbox'&&!e.target.value)||!configured(candidate)){status('Check the buy-ins and payout percentages. Keep enabled Parejas payouts at 100% or less.');if(e.target.type==='checkbox')e.target.checked=state.config[id];else e.target.value=state.config[id];return;}
+    if((e.target.type!=='checkbox'&&!e.target.value)||!configured(candidate)){status('Check the buy-ins and payout percentages. Keep enabled Doubles payouts at 100% or less.');if(e.target.type==='checkbox')e.target.checked=state.config[id];else e.target.value=state.config[id];return;}
     state.config=candidate;persist();render();status('Configuration saved.');
   }));
   ['Hdcp','Scratch'].forEach(t=>document.getElementById('join'+t).addEventListener('change',toggleCounts));
@@ -341,17 +434,18 @@ function setup() {
     if(!editingId && state.bowlers.some(b=>b.name.toLowerCase()===name.toLowerCase())){status('A bowler with that name is already registered.');return;}
     if(editingId && state.bowlers.some(b=>b.id!==editingId&&b.name.toLowerCase()===name.toLowerCase())){status('A bowler with that name is already registered.');return;}
     const prior=state.bowlers.find(b=>b.id===editingId);
-    const bowler={id:editingId||String(Date.now())+Math.random().toString(36).slice(2),name,handicap,hdcpCount,scratchCount,high:document.getElementById('joinHigh').checked,pairs:document.getElementById('joinPairs').checked,scores:prior?.scores||blankScores()};
+    const onTeam=editingId&&pairCount(state,editingId)>0;
+    const bowler={id:editingId||String(Date.now())+Math.random().toString(36).slice(2),name,handicap,hdcpCount,scratchCount,high:document.getElementById('joinHigh').checked,pairs:document.getElementById('joinPairs').checked||!!onTeam,scores:prior?.scores||blankScores()};
     if(prior) state.bowlers[state.bowlers.indexOf(prior)]=bowler;else state.bowlers.push(bowler);
-    // Registration changes invalidate the generated draw.
-    state.brackets={hdcp:[],scratch:[]};state.generated=false;state.pairs=[];state.pairsGenerated=false;
-    persist();resetForm();render();status('Bowler saved. Generate brackets and Parejas again after roster changes.');
+    // Registration changes invalidate the bracket draw; manually added teams keep their member IDs.
+    state.brackets={hdcp:[],scratch:[]};state.generated=false;
+    persist();resetForm();render();status('Bowler saved. Generate brackets again after roster changes.');
   });
   document.getElementById('cancelEdit').addEventListener('click',resetForm);
   document.getElementById('rosterRows').addEventListener('click',e=>{
     const edit=e.target.closest('[data-edit]'),remove=e.target.closest('[data-remove]');
     if(edit){const b=state.bowlers.find(x=>x.id===edit.dataset.edit);if(!b)return;editingId=b.id;document.getElementById('name').value=b.name;document.getElementById('handicap').value=b.handicap;document.getElementById('joinHdcp').checked=b.hdcpCount>0;document.getElementById('joinScratch').checked=b.scratchCount>0;document.getElementById('joinHigh').checked=b.high;document.getElementById('joinPairs').checked=b.pairs;document.getElementById('hdcpCount').value=b.hdcpCount||1;document.getElementById('scratchCount').value=b.scratchCount||1;document.getElementById('saveBowler').textContent='Save changes';document.getElementById('cancelEdit').classList.remove('hidden');toggleCounts();document.getElementById('name').focus();}
-    if(remove){const b=state.bowlers.find(x=>x.id===remove.dataset.remove);if(!b||!confirm('Remove '+b.name+' and regenerate brackets and pairs?'))return;state.bowlers=state.bowlers.filter(x=>x.id!==b.id);state.brackets={hdcp:[],scratch:[]};state.generated=false;state.pairs=[];state.pairsGenerated=false;persist();render();status('Bowler removed. Generate brackets and Parejas again.');}
+    if(remove){const b=state.bowlers.find(x=>x.id===remove.dataset.remove);if(!b||!confirm('Remove '+b.name+' and their Doubles teams?'))return;state.bowlers=state.bowlers.filter(x=>x.id!==b.id);state.brackets={hdcp:[],scratch:[]};state.generated=false;state.pairs=state.pairs.filter(ids=>!ids.includes(b.id));persist();render();status('Bowler and their Doubles teams removed. Generate brackets again.');}
   });
   document.getElementById('generate').addEventListener('click',()=>{
     state.brackets={hdcp:buildBrackets(state.bowlers,'hdcp'),scratch:buildBrackets(state.bowlers,'scratch')};state.generated=true;persist();render();
@@ -359,9 +453,37 @@ function setup() {
     status(total?total+' bracket'+(total===1?'':'s')+' generated.':'No brackets generated. At least seven different bowlers must join an event.');
   });
   document.getElementById('generateHigh').addEventListener('click',()=>{state.highGenerated=true;persist();render();status('High Game standings updated.');});
-  document.getElementById('generatePairs').addEventListener('click',()=>{
-    state.pairs=buildPairs(state.bowlers);state.pairsGenerated=true;persist();render();
-    status(state.pairs.length?state.pairs.length+' pair'+(state.pairs.length===1?'':'s')+' generated.':'No pairs generated. Register at least two Parejas bowlers.');
+  const pairMessage=(id)=>{
+    const input=document.getElementById('pairName'+id),help=document.getElementById('pairHelp'+id),value=input.value.trim().toLocaleLowerCase();
+    help.textContent=value&&!state.bowlers.some(b=>b.name.toLocaleLowerCase().startsWith(value))?'Please register bowler.':'';
+    translateUI();
+  };
+  [1,2].forEach(i=>{
+    document.getElementById('pairName'+i).addEventListener('input',()=>pairMessage(i));
+    document.getElementById('pairName'+i).addEventListener('blur',e=>{
+      const value=e.target.value.trim();
+      if(value&&!state.bowlers.some(b=>b.name.toLocaleLowerCase()===value.toLocaleLowerCase())){document.getElementById('pairHelp'+i).textContent='Please register bowler.';translateUI();}
+    });
+  });
+  document.getElementById('addPairForm').addEventListener('submit',e=>{
+    e.preventDefault();
+    const result=addTeamByNames(state,document.getElementById('pairName1').value,document.getElementById('pairName2').value);
+    if(result==='not_registered'){
+      [1,2].forEach(i=>{
+        const value=document.getElementById('pairName'+i).value.trim().toLocaleLowerCase();
+        document.getElementById('pairHelp'+i).textContent=state.bowlers.some(b=>b.name.toLocaleLowerCase()===value)?'':'Please register bowler.';
+      });
+      status('Please register bowler.');return;
+    }
+    if(result==='same_bowler'){status('A Doubles team needs two different bowlers.');return;}
+    if(result==='duplicate_team'){status('This Doubles team is already registered.');return;}
+    persist();e.target.reset();document.getElementById('pairHelp1').textContent='';document.getElementById('pairHelp2').textContent='';render();status('Doubles team added.');
+  });
+  document.getElementById('teamList').addEventListener('click',e=>{
+    const button=e.target.closest('[data-remove-pair]');if(!button)return;
+    const index=Number(button.dataset.removePair),ids=state.pairs[index];
+    if(!ids||!confirm('Remove this Doubles team?'))return;
+    state.pairs.splice(index,1);persist();render();status('Doubles team removed.');
   });
   document.getElementById('brackets').addEventListener('click',e=>{
     const button=e.target.closest('[data-download]');if(!button)return;
@@ -383,7 +505,7 @@ function setup() {
     catch(e) { status('Backup was not saved. Competition data was kept.');return; }
     const prompt=confirmedSave?'Backup saved. Clear this competition and start from scratch?':'Check that the JSON backup downloaded successfully. Clear this competition and start from scratch?';
     if(!confirm(prompt)){status('Competition data was kept.');return;}
-    state=fresh();persist();resetForm();document.querySelector('[data-tab="registration"]').click();status('New competition started. Previous data is in your JSON backup.');
+    const language=state.language;state=fresh();state.language=language;persist();resetForm();document.getElementById('addPairForm').reset();document.getElementById('pairHelp1').textContent='';document.getElementById('pairHelp2').textContent='';document.querySelector('[data-tab="registration"]').click();status('New competition started. Previous data is in your JSON backup.');
   });
   document.getElementById('restoreBackup').addEventListener('change',async e=>{
     const file=e.target.files?.[0];if(!file)return;
@@ -391,12 +513,12 @@ function setup() {
       const packageData=JSON.parse(await file.text());
       if(!validBackup(packageData)){status('This is not a valid Monster Bowling backup.');return;}
       if(!confirm('Replace the current competition with this backup?'))return;
-      localStorage.setItem(KEY,JSON.stringify(packageData.competition));state=load();resetForm();render();status('Backup restored.');
+      localStorage.setItem(KEY,JSON.stringify(packageData.competition));state=load();resetForm();document.getElementById('addPairForm').reset();render();status('Backup restored.');
     } catch { status('Could not read the JSON backup.'); }
     finally { e.target.value=''; }
   });
   toggleCounts();render();
 }
 if(typeof document!=='undefined') setup();
-if(typeof module!=='undefined') module.exports={fresh,buildBrackets,buildPairs,bracketGraphic,calculate,reportSummary,backupPackage,validBackup,rankAwards,configured,complete,assignedCount};
+if(typeof module!=='undefined') module.exports={fresh,buildBrackets,addTeamByNames,pairCount,bracketGraphic,calculate,reportSummary,backupPackage,validBackup,rankAwards,configured,complete,assignedCount};
 
