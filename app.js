@@ -1,26 +1,32 @@
 const KEY = 'monster-bowling-v2';
-const DEFAULT_CONFIG = {hdcpBuyin:10,hdcpFirst:50,hdcpSecond:25,scratchBuyin:10,scratchFirst:50,scratchSecond:25,highBuyin:20,highPayout:100,quinBuyin:50,quinGameFirst:30,quinGameSecond:20,quinSeriesFirst:30,quinSeriesSecond:20};
+const DEFAULT_CONFIG = {hdcpBuyin:10,hdcpFirst:50,hdcpSecond:25,scratchBuyin:10,scratchFirst:50,scratchSecond:25,highBuyin:20,highPayout:100,pairsBuyin:20,pairsGamePayout:50,pairsSeriesPayout:50,pairsHighEnabled:true,pairsSeriesEnabled:true};
 const CONFIG_IDS = Object.keys(DEFAULT_CONFIG);
+const MONEY_IDS = CONFIG_IDS.filter(id=>id.endsWith('Buyin'));
+const NUMBER_IDS = CONFIG_IDS.filter(id=>typeof DEFAULT_CONFIG[id]==='number');
 const money = cents => '$' + (cents / 100).toFixed(2);
 const cents = value => Math.round(Number(value) * 100);
 const safe = value => String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const num = (value, fallback=0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const blankScores = () => ({g1:null,g2:null,g3:null});
-function fresh() { return {config:{...DEFAULT_CONFIG},bowlers:[],brackets:{hdcp:[],scratch:[]},generated:false}; }
+function fresh() { return {config:{...DEFAULT_CONFIG},bowlers:[],brackets:{hdcp:[],scratch:[]},generated:false,highGenerated:false,pairs:[],pairsGenerated:false}; }
 function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY));
     if (!raw || !Array.isArray(raw.bowlers)) return fresh();
-    return {config:{...DEFAULT_CONFIG,...raw.config},bowlers:raw.bowlers.map(b=>({...b,high:!!b.high,quin:!!b.quin,scores:{...blankScores(),...b.scores}})),brackets:raw.brackets || {hdcp:[],scratch:[]},generated:!!raw.generated};
+    const config={...DEFAULT_CONFIG};
+    CONFIG_IDS.forEach(id=>{if(raw.config && Object.hasOwn(raw.config,id)) config[id]=raw.config[id];});
+    return {config,bowlers:raw.bowlers.map(({quin,...b})=>({...b,high:!!b.high,pairs:!!b.pairs,scores:{...blankScores(),...b.scores}})),brackets:raw.brackets || {hdcp:[],scratch:[]},generated:!!raw.generated,highGenerated:!!raw.highGenerated,pairs:Array.isArray(raw.pairs)?raw.pairs:[],pairsGenerated:!!raw.pairsGenerated};
   } catch { return fresh(); }
 }
 let state = typeof localStorage === 'undefined' ? fresh() : load();
 let editingId = null;
 function persist() { if (typeof localStorage !== 'undefined') localStorage.setItem(KEY,JSON.stringify(state)); }
 function configured(c) {
-  for (const id of CONFIG_IDS) if (!Number.isFinite(Number(c[id])) || c[id] < 0 || (id.includes('Buyin') && cents(c[id]) < 0) || (!id.includes('Buyin') && c[id] > 100)) return false;
+  for (const id of NUMBER_IDS) if (typeof c[id]!=='number'||!Number.isFinite(c[id]) || c[id] < 0 || (!MONEY_IDS.includes(id) && c[id] > 100)) return false;
+  if(typeof c.pairsHighEnabled!=='boolean'||typeof c.pairsSeriesEnabled!=='boolean') return false;
   return c.hdcpFirst+c.hdcpSecond <= 100 && c.scratchFirst+c.scratchSecond <= 100 &&
-    c.quinGameFirst+c.quinGameSecond+c.quinSeriesFirst+c.quinSeriesSecond <= 100;
+    (c.pairsHighEnabled || c.pairsSeriesEnabled) &&
+    (c.pairsHighEnabled?c.pairsGamePayout:0)+(c.pairsSeriesEnabled?c.pairsSeriesPayout:0) <= 100;
 }
 function totalEntries(type) { return state.brackets[type].reduce((n,b)=>n+b.length,0); }
 function assignedCount(type,id) { return state.brackets[type].reduce((n,b)=>n+b.filter(p=>p===id).length,0); }
@@ -57,11 +63,25 @@ function buildBrackets(bowlers,type) {
   });
   return result.map(ids=>shuffle(spots===7?[...ids,null]:ids));
 }
+function buildPairs(bowlers) {
+  const ids=shuffle(bowlers.filter(b=>b.pairs).map(b=>b.id));
+  const pairs=[];
+  for(let i=0;i+1<ids.length;i+=2) pairs.push([ids[i],ids[i+1]]);
+  return pairs;
+}
 function complete(b) { return ['g1','g2','g3'].every(g=>b.scores[g]!==null && b.scores[g]!=='' && Number.isFinite(Number(b.scores[g]))); }
+function hasGame(b,g) { return b.scores['g'+g]!==null && b.scores['g'+g]!=='' && Number.isFinite(Number(b.scores['g'+g])); }
 function game(b,g,handicap=false) { return Number(b.scores['g'+g])+(handicap?Number(b.handicap):0); }
 function series(b,handicap=false) { return [1,2,3].reduce((n,g)=>n+game(b,g,handicap),0); }
 function bestGame(b,handicap=false) { return Math.max(...[1,2,3].map(g=>game(b,g,handicap))); }
-function rankAwards(players,value,pool,percentages,description) {
+function pairGame(team,g) { return team.reduce((n,b)=>n+game(b,g,true),0); }
+function pairSeries(team) { return [1,2,3].reduce((n,g)=>n+pairGame(team,g),0); }
+function pairBest(team) { return Math.max(...[1,2,3].map(g=>pairGame(team,g))); }
+function pairedTeams(data) {
+  const byId=new Map(data.bowlers.map(b=>[b.id,b]));
+  return data.pairs.map(ids=>ids.map(id=>byId.get(id))).filter(team=>team.length===2&&team.every(Boolean));
+}
+function rankAwards(players,value,pool,percentages,description,category) {
   const sorted=[...players].sort((a,b)=>value(b)-value(a)||a.name.localeCompare(b.name));
   const awards=[];
   let rank=0;
@@ -71,11 +91,20 @@ function rankAwards(players,value,pool,percentages,description) {
     const amount=percentages.slice(first,Math.min(last,percentages.length)).reduce((n,p)=>n+Math.round(pool*p/100),0);
     if(amount>0) {
       const share=Math.floor(amount/tied.length), remainder=amount%tied.length;
-      tied.forEach((p,j)=>awards.push({id:p.id,description:description+' · '+(first+1)+(tied.length>1?' tie':'')+' ('+value(p)+')',amount:share+(j<remainder?1:0)}));
+      tied.forEach((p,j)=>awards.push({id:p.id,category,description:description+' · '+(first+1)+(tied.length>1?' tie':'')+' ('+value(p)+')',amount:share+(j<remainder?1:0)}));
     }
     i=last;rank=i;
   }
   return awards;
+}
+function pairAwards(teams,value,amount,description) {
+  if(!teams.length||amount<=0) return [];
+  const top=Math.max(...teams.map(value)), winners=teams.filter(team=>value(team)===top);
+  const teamShare=Math.floor(amount/winners.length), teamRemainder=amount%winners.length;
+  return winners.flatMap((team,i)=>{
+    const payout=teamShare+(i<teamRemainder?1:0), half=Math.floor(payout/2);
+    return team.map((b,j)=>({id:b.id,category:'pairs',description:description+' · '+team.map(x=>x.name).join(' & ')+' ('+top+')'+(winners.length>1?' tie':''),amount:half+(j===0?payout%2:0)}));
+  });
 }
 function bracketFinalists(ids,type,bowlers) {
   const byId=new Map(bowlers.map(b=>[b.id,b]));
@@ -147,19 +176,19 @@ function calculate(state) {
       if(!finalists){pending.push(type+' bracket #'+(i+1)+' needs all three scores for every entrant.');continue;}
       const pool=cents(c[type+'Buyin'])*ids.filter(Boolean).length;
       const value=p=>game(p,3,type==='hdcp');
-      awards.push(...rankAwards(finalists,value,pool,[c[type+'First'],c[type+'Second']],(type==='hdcp'?'HDCP':'Scratch')+' bracket #'+(i+1)));
+      awards.push(...rankAwards(finalists,value,pool,[c[type+'First'],c[type+'Second']],(type==='hdcp'?'HDCP':'Scratch')+' bracket #'+(i+1),type));
     }
   }
   const high=bowlers.filter(b=>b.high);
   if(high.length && high.every(complete)) {
-    awards.push(...rankAwards(high,b=>bestGame(b,true),cents(c.highBuyin)*high.length,[c.highPayout],'HDCP High Game Pot'));
+    awards.push(...rankAwards(high,b=>bestGame(b,true),cents(c.highBuyin)*high.length,[c.highPayout],'HDCP High Game Pot','high'));
   } else if(high.length) pending.push('High Game Pot needs all three scores for every entrant.');
-  const quin=bowlers.filter(b=>b.quin);
-  if(quin.length && quin.every(complete)) {
-    const pool=cents(c.quinBuyin)*quin.length;
-    awards.push(...rankAwards(quin,b=>bestGame(b),pool,[c.quinGameFirst,c.quinGameSecond],'Quiniela high game'));
-    awards.push(...rankAwards(quin,b=>series(b),pool,[c.quinSeriesFirst,c.quinSeriesSecond],'Quiniela high series'));
-  } else if(quin.length) pending.push('Quiniela needs all three scores for every entrant.');
+  const teams=pairedTeams(state);
+  if(teams.length && teams.every(team=>team.every(complete))) {
+    const pool=cents(c.pairsBuyin)*teams.length*2;
+    if(c.pairsHighEnabled) awards.push(...pairAwards(teams,pairBest,Math.round(pool*c.pairsGamePayout/100),'Parejas high game'));
+    if(c.pairsSeriesEnabled) awards.push(...pairAwards(teams,pairSeries,Math.round(pool*c.pairsSeriesPayout/100),'Parejas series'));
+  } else if(teams.length) pending.push('Parejas needs all three scores for every paired bowler.');
   return {awards,pending};
 }
 function reportSummary(data) {
@@ -167,15 +196,17 @@ function reportSummary(data) {
   const count=(type,id)=>(data.brackets[type]||[]).reduce((n,ids)=>n+ids.filter(x=>x===id).length,0);
   const rows=data.bowlers.map(b=>{
     const h=count('hdcp',b.id), s=count('scratch',b.id);
+    const paired=(data.pairs||[]).some(ids=>ids.includes(b.id));
     const charges=[
-      ...(h?[{label:h+' handicap bracket'+(h===1?'':'s')+' × '+money(cents(c.hdcpBuyin)),amount:h*cents(c.hdcpBuyin)}]:[]),
-      ...(s?[{label:s+' scratch bracket'+(s===1?'':'s')+' × '+money(cents(c.scratchBuyin)),amount:s*cents(c.scratchBuyin)}]:[]),
-      ...(b.high?[{label:'Handicap High Game Pot',amount:cents(c.highBuyin)}]:[]),
-      ...(b.quin?[{label:'Quiniela',amount:cents(c.quinBuyin)}]:[])
+      ...(h?[{category:'hdcp',label:h+' handicap bracket'+(h===1?'':'s')+' × '+money(cents(c.hdcpBuyin)),amount:h*cents(c.hdcpBuyin)}]:[]),
+      ...(s?[{category:'scratch',label:s+' scratch bracket'+(s===1?'':'s')+' × '+money(cents(c.scratchBuyin)),amount:s*cents(c.scratchBuyin)}]:[]),
+      ...(b.high?[{category:'high',label:'Handicap High Game Pot',amount:cents(c.highBuyin)}]:[]),
+      ...(paired?[{category:'pairs',label:'Parejas',amount:cents(c.pairsBuyin)}]:[])
     ];
     const winnings=result.awards.filter(a=>a.id===b.id);
     const due=charges.reduce((n,x)=>n+x.amount,0), won=winnings.reduce((n,x)=>n+x.amount,0);
-    return {id:b.id,name:b.name,charges,due,winnings,won,net:won-due};
+    const eventNet=Object.fromEntries(['hdcp','scratch','high','pairs'].map(type=>[type,winnings.filter(x=>x.category===type).reduce((n,x)=>n+x.amount,0)-charges.filter(x=>x.category===type).reduce((n,x)=>n+x.amount,0)]));
+    return {id:b.id,name:b.name,charges,due,winnings,won,eventNet,net:won-due};
   });
   const collected=rows.reduce((n,r)=>n+r.due,0), awarded=rows.reduce((n,r)=>n+r.won,0);
   return {rows,collected,awarded,net:awarded-collected,pending:result.pending};
@@ -183,24 +214,70 @@ function reportSummary(data) {
 function balanceText(amount) { return (amount<0?'−':amount>0?'+':'')+money(Math.abs(amount)); }
 function balanceClass(amount) { return amount<0?'balance-negative':amount>0?'balance-positive':'balance-zero'; }
 function status(message) { document.getElementById('status').textContent=message; }
+function marked(value,winner) { return winner?'<span class="winner-circle">'+value+'</span>':String(value); }
+function renderHighGame() {
+  const players=state.bowlers.filter(b=>b.high);
+  if(!state.highGenerated) {
+    document.getElementById('highNotice').innerHTML='<p class="hint">Select High Game during registration, then generate the standings.</p>';
+    document.getElementById('highRows').innerHTML='';
+    document.getElementById('highResult').innerHTML='';
+    return;
+  }
+  const ready=[1,2,3].map(g=>players.length>0&&players.every(b=>hasGame(b,g)));
+  const top=[1,2,3].map((g,i)=>ready[i]?Math.max(...players.map(b=>game(b,g,true))):null);
+  const finished=players.length>0&&players.every(complete);
+  const best=finished?Math.max(...players.map(b=>bestGame(b,true))):null;
+  document.getElementById('highNotice').innerHTML=players.length?(!finished?'<p class="notice">Payout is pending until every entrant has all three scores.</p>':''):'<p class="notice">No bowlers registered for High Game Pot.</p>';
+  document.getElementById('highRows').innerHTML=players.map(b=>'<tr><td>'+safe(b.name)+' (+'+b.handicap+')</td>'+[1,2,3].map((g,i)=>'<td>'+(hasGame(b,g)?marked(game(b,g,true),ready[i]&&game(b,g,true)===top[i]):'—')+'</td>').join('')+'<td>'+(complete(b)?marked(bestGame(b,true),finished&&bestGame(b,true)===best):'—')+'</td></tr>').join('')||'<tr><td colspan="5">No participants.</td></tr>';
+  const payouts=calculate(state).awards.filter(a=>a.category==='high');
+  document.getElementById('highResult').innerHTML=finished?'<h3>Pot result</h3><p>Winning game: '+marked(best,true)+'. Payout: '+payouts.map(a=>safe(players.find(b=>b.id===a.id)?.name||'Unknown')+' '+money(a.amount)).join(' · ')+'.</p>':'';
+}
+function renderPairs() {
+  const interested=state.bowlers.filter(b=>b.pairs), teams=pairedTeams(state);
+  if(!state.pairsGenerated) {
+    document.getElementById('pairsNotice').innerHTML='<p class="hint">'+interested.length+' bowlers registered. Generate pairs to assign teams and calculate charges.</p>';
+    document.getElementById('pairsRows').innerHTML='';
+    document.getElementById('pairsResult').innerHTML='';
+    return;
+  }
+  const pairedIds=new Set(state.pairs.flat()), unmatched=interested.filter(b=>!pairedIds.has(b.id));
+  document.getElementById('pairsNotice').innerHTML=unmatched.length?'<p class="notice">Unpaired and not charged: '+safe(unmatched.map(b=>b.name).join(', '))+'.</p>':'';
+  const ready=[1,2,3].map(g=>teams.length>0&&teams.every(t=>t.every(b=>hasGame(b,g))));
+  const tops=[1,2,3].map((g,i)=>ready[i]?Math.max(...teams.map(t=>pairGame(t,g))):null);
+  const finished=teams.length>0&&teams.every(t=>t.every(complete));
+  const bestGameScore=finished?Math.max(...teams.map(pairBest)):null;
+  const bestSeriesScore=finished?Math.max(...teams.map(pairSeries)):null;
+  document.getElementById('pairsRows').innerHTML=teams.map((team,i)=>{
+    const row=b=>'<tr><td>'+safe(b.name)+' (+'+b.handicap+')</td>'+[1,2,3].map(g=>'<td>'+(hasGame(b,g)?game(b,g,true):'—')+'</td>').join('')+'<td>'+(complete(b)?series(b,true):'—')+'</td></tr>';
+    const total='<tr class="pair-total"><td>Combined</td>'+[1,2,3].map((g,j)=>'<td>'+(team.every(b=>hasGame(b,g))?marked(pairGame(team,g),ready[j]&&pairGame(team,g)===tops[j]):'—')+'</td>').join('')+'<td>'+(team.every(complete)?marked(pairSeries(team),finished&&state.config.pairsSeriesEnabled&&pairSeries(team)===bestSeriesScore):'—')+'</td></tr>';
+    const high=team.every(complete)?'<p>Best combined game: '+marked(pairBest(team),finished&&state.config.pairsHighEnabled&&pairBest(team)===bestGameScore)+'</p>':'';
+    return '<div class="pair-card"><h3>Pair #'+(i+1)+': '+safe(team.map(b=>b.name).join(' & '))+'</h3><div class="table-wrap"><table class="event-table"><thead><tr><th>Bowler</th><th>Game 1</th><th>Game 2</th><th>Game 3</th><th>Series</th></tr></thead><tbody>'+team.map(row).join('')+total+'</tbody></table></div>'+high+'</div>';
+  }).join('')||'<p class="notice">At least two Parejas entrants are needed to make a team.</p>';
+  const payouts=calculate(state).awards.filter(a=>a.category==='pairs');
+  document.getElementById('pairsResult').innerHTML=finished?'<h3>Parejas results</h3><p>'+payouts.map(a=>safe(state.bowlers.find(b=>b.id===a.id)?.name||'Unknown')+' — '+safe(a.description)+' '+money(a.amount)).join('<br>')+'</p>':'<p class="hint">Payouts appear after every paired bowler has all three scores.</p>';
+}
 function render() {
-  CONFIG_IDS.forEach(id=>{const el=document.getElementById(id); if(document.activeElement!==el) el.value=state.config[id];});
-  document.getElementById('rosterRows').innerHTML=state.bowlers.map(b=>'<tr><td>'+safe(b.name)+'</td><td>'+b.handicap+'</td><td>'+b.hdcpCount+'</td><td>'+b.scratchCount+'</td><td>'+(b.high?'Yes':'No')+'</td><td>'+(b.quin?'Yes':'No')+'</td><td><button class="secondary" data-edit="'+safe(b.id)+'">Edit</button> <button class="danger" data-remove="'+safe(b.id)+'">Remove</button></td></tr>').join('') || '<tr><td colspan="7">No bowlers registered yet.</td></tr>';
+  CONFIG_IDS.forEach(id=>{const el=document.getElementById(id); if(el.type==='checkbox') el.checked=!!state.config[id]; else if(document.activeElement!==el) el.value=state.config[id];});
+  document.getElementById('rosterRows').innerHTML=state.bowlers.map(b=>'<tr><td>'+safe(b.name)+'</td><td>'+b.handicap+'</td><td>'+b.hdcpCount+'</td><td>'+b.scratchCount+'</td><td>'+(b.high?'Yes':'No')+'</td><td>'+(b.pairs?'Yes':'No')+'</td><td><button class="secondary" data-edit="'+safe(b.id)+'">Edit</button> <button class="danger" data-remove="'+safe(b.id)+'">Remove</button></td></tr>').join('') || '<tr><td colspan="7">No bowlers registered yet.</td></tr>';
   for(const type of ['hdcp','scratch']) {
     document.getElementById(type+'Brackets').innerHTML=state.brackets[type].map((ids,i)=>'<div class="bracket"><div class="bracket-head"><strong>'+(type==='hdcp'?'Handicap':'Scratch')+' bracket #'+(i+1)+'</strong><button class="secondary no-print" data-download="'+type+':'+i+'">Download SVG image</button></div><div class="bracket-scroll">'+bracketGraphic(ids,type,state.bowlers,i)+'</div></div>').join('') || '<p class="hint">No brackets generated. At least seven different bowlers must select this event.</p>';
   }
   const unused=state.bowlers.flatMap(b=>['hdcp','scratch'].map(t=>{const n=b[t+'Count']-assignedCount(t,b.id);return n>0?b.name+': '+n+' unused '+t+' '+(n===1?'spot':'spots'):null;})).filter(Boolean);
   document.getElementById('bracketNotice').innerHTML=state.generated&&unused.length?'<p class="notice">Willingness above the available full brackets: '+safe(unused.join(' · '))+'</p>':'';
   document.getElementById('scoreRows').innerHTML=state.bowlers.map(b=>'<tr><td>'+safe(b.name)+' (+'+b.handicap+')</td>'+[1,2,3].map(g=>'<td><input aria-label="'+safe(b.name)+' game '+g+'" data-score="'+safe(b.id)+'" data-game="g'+g+'" type="number" min="0" max="300" step="1" value="'+(b.scores['g'+g]??'')+'"></td>').join('')+'<td>'+(complete(b)?series(b):'—')+'</td><td>'+(complete(b)?series(b,true):'—')+'</td></tr>').join('')||'<tr><td colspan="6">Register bowlers first.</td></tr>';
+  renderHighGame();
+  renderPairs();
   const report=reportSummary(state);
   const notes=[
     ...(!state.generated&&state.bowlers.some(b=>b.hdcpCount||b.scratchCount)?['Generate brackets to determine actual bracket charges.']:[]),
     ...(state.generated&&unused.length?['Unused bracket willingness is not charged: '+unused.join(' · ')]:[]),
+    ...(!state.pairsGenerated&&state.bowlers.some(b=>b.pairs)?['Generate Parejas to determine pair charges.']:[]),
+    ...(state.pairsGenerated&&state.bowlers.some(b=>b.pairs&&!state.pairs.flat().includes(b.id))?['Unpaired Parejas entrants are not charged.']:[]),
     ...report.pending
   ];
   document.getElementById('reportNotice').innerHTML=notes.length?'<p class="notice">'+safe(notes.join(' · '))+(report.pending.length?' Balances may change when pending results are entered.':'')+'</p>':'';
   const list=(items,label)=>items.length?'<ul class="breakdown">'+items.map(x=>'<li>'+safe(x.label||x.description)+' <span class="detail-amount">'+money(x.amount)+'</span></li>').join('')+'</ul>':'<span class="hint">'+label+'</span>';
-  document.getElementById('reportRows').innerHTML=report.rows.map(r=>'<tr><td><strong>'+safe(r.name)+'</strong></td><td>'+list(r.charges,'No entries')+'</td><td class="money">'+money(r.due)+'</td><td>'+list(r.winnings,'No winnings')+'</td><td class="money">'+money(r.won)+'</td><td class="money '+balanceClass(r.net)+'">'+balanceText(r.net)+'</td></tr>').join('')||'<tr><td colspan="6">No bowlers registered yet.</td></tr>';
+  document.getElementById('reportRows').innerHTML=report.rows.map(r=>'<tr><td><strong>'+safe(r.name)+'</strong></td><td>'+list(r.charges,'No entries')+'</td><td class="money">'+money(r.due)+'</td><td>'+list(r.winnings,'No winnings')+'</td><td class="money">'+money(r.won)+'</td>'+['hdcp','scratch','high','pairs'].map(t=>'<td class="money '+balanceClass(r.eventNet[t])+'">'+balanceText(r.eventNet[t])+'</td>').join('')+'<td class="money '+balanceClass(r.net)+'">'+balanceText(r.net)+'</td></tr>').join('')||'<tr><td colspan="10">No bowlers registered yet.</td></tr>';
   document.getElementById('reportTotals').innerHTML='<div>Total charges<strong>'+money(report.collected)+'</strong></div><div>Total winnings<strong>'+money(report.awarded)+'</strong></div><div>Combined bowler balance<strong class="'+balanceClass(report.net)+'">'+balanceText(report.net)+'</strong></div>';
 }
 function resetForm() {
@@ -215,14 +292,42 @@ function toggleCounts() {
     document.getElementById(t.toLowerCase()+'Count').required=on;
   }
 }
+function backupPackage(data) {
+  return {format:'monster-bowling-backup',version:3,exportedAt:new Date().toISOString(),competition:data};
+}
+function validBackup(packageData) {
+  const data=packageData?.competition;
+  if(packageData?.format!=='monster-bowling-backup'||!data?.config||!configured(data.config)||!Array.isArray(data.bowlers)||!Array.isArray(data.pairs)||!Array.isArray(data.brackets?.hdcp)||!Array.isArray(data.brackets?.scratch)) return false;
+  const ids=new Set();
+  for(const b of data.bowlers) {
+    if(typeof b.id!=='string'||typeof b.name!=='string'||!b.name.trim()||ids.has(b.id)||!Number.isInteger(b.handicap)||b.handicap<0||b.handicap>300||!b.scores) return false;
+    if(!['g1','g2','g3'].every(g=>b.scores[g]===null||(Number.isInteger(b.scores[g])&&b.scores[g]>=0&&b.scores[g]<=300))) return false;
+    ids.add(b.id);
+  }
+  return [...data.brackets.hdcp,...data.brackets.scratch].every(bracket=>Array.isArray(bracket)&&bracket.length===8&&bracket.every(id=>id===null||ids.has(id)))&&
+    data.pairs.every(pair=>Array.isArray(pair)&&pair.length===2&&pair.every(id=>ids.has(id)));
+}
+async function downloadBackup() {
+  const json=JSON.stringify(backupPackage(state),null,2),name='monster-bowling-backup-'+new Date().toISOString().slice(0,10)+'.json';
+  if(window.showSaveFilePicker) {
+    const handle=await window.showSaveFilePicker({suggestedName:name,types:[{description:'JSON backup',accept:{'application/json':['.json']}}]});
+    const writer=await handle.createWritable();await writer.write(json);await writer.close();
+    return true;
+  }
+  const url=URL.createObjectURL(new Blob([json],{type:'application/json'}));
+  const link=document.createElement('a');link.href=url;link.download=name;link.click();
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
+  return false;
+}
 function setup() {
   document.querySelectorAll('[data-tab]').forEach(btn=>btn.addEventListener('click',()=>{
     document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===btn));
     document.querySelectorAll('.panel').forEach(x=>x.classList.toggle('active',x.id===btn.dataset.tab));render();
   }));
   CONFIG_IDS.forEach(id=>document.getElementById(id).addEventListener('change',e=>{
-    const candidate={...state.config,[id]:num(e.target.value,NaN)};
-    if(!e.target.value || !configured(candidate)){status('Enter nonnegative amounts and keep each event’s payout percentages at 100% or less.');e.target.value=state.config[id];return;}
+    const value=e.target.type==='checkbox'?e.target.checked:num(e.target.value,NaN);
+    const candidate={...state.config,[id]:value};
+    if((e.target.type!=='checkbox'&&!e.target.value)||!configured(candidate)){status('Check the buy-ins and payout percentages. Keep enabled Parejas payouts at 100% or less.');if(e.target.type==='checkbox')e.target.checked=state.config[id];else e.target.value=state.config[id];return;}
     state.config=candidate;persist();render();status('Configuration saved.');
   }));
   ['Hdcp','Scratch'].forEach(t=>document.getElementById('join'+t).addEventListener('change',toggleCounts));
@@ -236,22 +341,27 @@ function setup() {
     if(!editingId && state.bowlers.some(b=>b.name.toLowerCase()===name.toLowerCase())){status('A bowler with that name is already registered.');return;}
     if(editingId && state.bowlers.some(b=>b.id!==editingId&&b.name.toLowerCase()===name.toLowerCase())){status('A bowler with that name is already registered.');return;}
     const prior=state.bowlers.find(b=>b.id===editingId);
-    const bowler={id:editingId||String(Date.now())+Math.random().toString(36).slice(2),name,handicap,hdcpCount,scratchCount,high:document.getElementById('joinHigh').checked,quin:document.getElementById('joinQuin').checked,scores:prior?.scores||blankScores()};
+    const bowler={id:editingId||String(Date.now())+Math.random().toString(36).slice(2),name,handicap,hdcpCount,scratchCount,high:document.getElementById('joinHigh').checked,pairs:document.getElementById('joinPairs').checked,scores:prior?.scores||blankScores()};
     if(prior) state.bowlers[state.bowlers.indexOf(prior)]=bowler;else state.bowlers.push(bowler);
     // Registration changes invalidate the generated draw.
-    state.brackets={hdcp:[],scratch:[]};state.generated=false;
-    persist();resetForm();render();status('Bowler saved. Generate brackets again after roster changes.');
+    state.brackets={hdcp:[],scratch:[]};state.generated=false;state.pairs=[];state.pairsGenerated=false;
+    persist();resetForm();render();status('Bowler saved. Generate brackets and Parejas again after roster changes.');
   });
   document.getElementById('cancelEdit').addEventListener('click',resetForm);
   document.getElementById('rosterRows').addEventListener('click',e=>{
     const edit=e.target.closest('[data-edit]'),remove=e.target.closest('[data-remove]');
-    if(edit){const b=state.bowlers.find(x=>x.id===edit.dataset.edit);if(!b)return;editingId=b.id;document.getElementById('name').value=b.name;document.getElementById('handicap').value=b.handicap;document.getElementById('joinHdcp').checked=b.hdcpCount>0;document.getElementById('joinScratch').checked=b.scratchCount>0;document.getElementById('joinHigh').checked=b.high;document.getElementById('joinQuin').checked=b.quin;document.getElementById('hdcpCount').value=b.hdcpCount||1;document.getElementById('scratchCount').value=b.scratchCount||1;document.getElementById('saveBowler').textContent='Save changes';document.getElementById('cancelEdit').classList.remove('hidden');toggleCounts();document.getElementById('name').focus();}
-    if(remove){const b=state.bowlers.find(x=>x.id===remove.dataset.remove);if(!b||!confirm('Remove '+b.name+' and regenerate brackets?'))return;state.bowlers=state.bowlers.filter(x=>x.id!==b.id);state.brackets={hdcp:[],scratch:[]};state.generated=false;persist();render();status('Bowler removed. Generate brackets again.');}
+    if(edit){const b=state.bowlers.find(x=>x.id===edit.dataset.edit);if(!b)return;editingId=b.id;document.getElementById('name').value=b.name;document.getElementById('handicap').value=b.handicap;document.getElementById('joinHdcp').checked=b.hdcpCount>0;document.getElementById('joinScratch').checked=b.scratchCount>0;document.getElementById('joinHigh').checked=b.high;document.getElementById('joinPairs').checked=b.pairs;document.getElementById('hdcpCount').value=b.hdcpCount||1;document.getElementById('scratchCount').value=b.scratchCount||1;document.getElementById('saveBowler').textContent='Save changes';document.getElementById('cancelEdit').classList.remove('hidden');toggleCounts();document.getElementById('name').focus();}
+    if(remove){const b=state.bowlers.find(x=>x.id===remove.dataset.remove);if(!b||!confirm('Remove '+b.name+' and regenerate brackets and pairs?'))return;state.bowlers=state.bowlers.filter(x=>x.id!==b.id);state.brackets={hdcp:[],scratch:[]};state.generated=false;state.pairs=[];state.pairsGenerated=false;persist();render();status('Bowler removed. Generate brackets and Parejas again.');}
   });
   document.getElementById('generate').addEventListener('click',()=>{
     state.brackets={hdcp:buildBrackets(state.bowlers,'hdcp'),scratch:buildBrackets(state.bowlers,'scratch')};state.generated=true;persist();render();
     const total=state.brackets.hdcp.length+state.brackets.scratch.length;
     status(total?total+' bracket'+(total===1?'':'s')+' generated.':'No brackets generated. At least seven different bowlers must join an event.');
+  });
+  document.getElementById('generateHigh').addEventListener('click',()=>{state.highGenerated=true;persist();render();status('High Game standings updated.');});
+  document.getElementById('generatePairs').addEventListener('click',()=>{
+    state.pairs=buildPairs(state.bowlers);state.pairsGenerated=true;persist();render();
+    status(state.pairs.length?state.pairs.length+' pair'+(state.pairs.length===1?'':'s')+' generated.':'No pairs generated. Register at least two Parejas bowlers.');
   });
   document.getElementById('brackets').addEventListener('click',e=>{
     const button=e.target.closest('[data-download]');if(!button)return;
@@ -267,8 +377,26 @@ function setup() {
     if(raw!==''&&(!Number.isInteger(Number(raw))||Number(raw)<0||Number(raw)>300)){status('Enter a whole game score from 0 to 300.');render();return;}
     b.scores[e.target.dataset.game]=raw===''?null:Number(raw);persist();render();status('Score saved.');
   });
+  document.getElementById('startNew').addEventListener('click',async()=>{
+    let confirmedSave=false;
+    try { confirmedSave=await downloadBackup(); }
+    catch(e) { status('Backup was not saved. Competition data was kept.');return; }
+    const prompt=confirmedSave?'Backup saved. Clear this competition and start from scratch?':'Check that the JSON backup downloaded successfully. Clear this competition and start from scratch?';
+    if(!confirm(prompt)){status('Competition data was kept.');return;}
+    state=fresh();persist();resetForm();document.querySelector('[data-tab="registration"]').click();status('New competition started. Previous data is in your JSON backup.');
+  });
+  document.getElementById('restoreBackup').addEventListener('change',async e=>{
+    const file=e.target.files?.[0];if(!file)return;
+    try {
+      const packageData=JSON.parse(await file.text());
+      if(!validBackup(packageData)){status('This is not a valid Monster Bowling backup.');return;}
+      if(!confirm('Replace the current competition with this backup?'))return;
+      localStorage.setItem(KEY,JSON.stringify(packageData.competition));state=load();resetForm();render();status('Backup restored.');
+    } catch { status('Could not read the JSON backup.'); }
+    finally { e.target.value=''; }
+  });
   toggleCounts();render();
 }
 if(typeof document!=='undefined') setup();
-if(typeof module!=='undefined') module.exports={fresh,buildBrackets,bracketGraphic,calculate,reportSummary,rankAwards,configured,complete,assignedCount};
+if(typeof module!=='undefined') module.exports={fresh,buildBrackets,buildPairs,bracketGraphic,calculate,reportSummary,backupPackage,validBackup,rankAwards,configured,complete,assignedCount};
 
