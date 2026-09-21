@@ -1,6 +1,12 @@
 # Monster Bowling Manager
 
-Open `index.html` in a browser, or use the repository's GitHub Pages site. No build step or server is required.
+Use the hosted app at `https://brackets.prodrillos.com`. The public site is served by GitHub Pages; a separate Neon project stores competitions, results, and verified accounts.
+
+## Accounts and competitions
+
+The verified account `monsterproshop@outlook.com` is the administrator. It can create leagues or tournaments from its dashboard, open each one, register bowlers, generate brackets, enter scores, and set buy-ins and payouts. Add each bowler's login email to their roster entry. Changes save to Neon for that competition.
+
+Other users create an account with email and password, enter the emailed verification code, and select an available league or tournament when signing in. They can see that competition's results after their verified email matches a registered bowler. Each person sees only their own charges, winnings, and balance. The administrator controls registration and scoring.
 
 ## Tournament workflow
 
@@ -19,9 +25,11 @@ The High Game Pot uses each entrant's highest single game **with handicap**. The
 
 Payouts are provisional until all three games are entered for every participant in that event. Unallocated portions of each pool stay with the tournament. Dollar amounts are rounded to cents.
 
-## Storage
+## Storage and deployment
 
-Tournament data is saved in the current browser's local storage. It is not synced across devices or users, and clearing browser data removes it. GitHub stores the application code, not tournament registrations.
+Competition data is saved in the independent Neon **Monster Bowling** project. GitHub stores application code, not tournament registrations. The database schema is in `neon/001_portal.sql`; the backend is the Neon Function in `functions/portal.js`. Build it with `npm install` and `npm run build:function`, then deploy `dist/portal.zip` to the Neon function `bowlingportal`. `portal-config.js` contains only public endpoint URLs; never place database passwords in browser files.
 
-Use **Start New Competition** in Reports & payouts to download a JSON backup, confirm it was saved, and clear the current competition. The same screen can restore one of these backup files.
+Cloudflare has a DNS-only CNAME from `brackets.prodrillos.com` to `monster-proshop.github.io`. GitHub Pages must also have `brackets.prodrillos.com` set as its custom domain. Neon Auth trusts this domain and requires email verification.
+
+Use **Start New Competition** in Reports & payouts to download a JSON backup, then return to the dashboard and create another competition. That action does not erase saved competitions. The manager can restore a backup into an open competition.
 

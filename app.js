@@ -105,12 +105,16 @@ function load() {
     if (!raw || !Array.isArray(raw.bowlers)) return fresh();
     const config={...DEFAULT_CONFIG};
     CONFIG_IDS.forEach(id=>{if(raw.config && Object.hasOwn(raw.config,id)) config[id]=raw.config[id];});
-    return {config,bowlers:raw.bowlers.map(({quin,...b})=>({...b,high:!!b.high,pairs:!!b.pairs,scores:{...blankScores(),...b.scores}})),brackets:raw.brackets || {hdcp:[],scratch:[]},generated:!!raw.generated,highGenerated:!!raw.highGenerated,pairs:Array.isArray(raw.pairs)?raw.pairs:[],pairsGenerated:!!raw.pairsGenerated,language:raw.language==='es'?'es':'en'};
+    return {config,bowlers:raw.bowlers.map(({quin,...b})=>({...b,email:typeof b.email==='string'?b.email:'',high:!!b.high,pairs:!!b.pairs,scores:{...blankScores(),...b.scores}})),brackets:raw.brackets || {hdcp:[],scratch:[]},generated:!!raw.generated,highGenerated:!!raw.highGenerated,pairs:Array.isArray(raw.pairs)?raw.pairs:[],pairsGenerated:!!raw.pairsGenerated,language:raw.language==='es'?'es':'en'};
   } catch { return fresh(); }
 }
-let state = typeof localStorage === 'undefined' ? fresh() : load();
+let state = typeof localStorage === 'undefined' || globalThis.MONSTER_PORTAL_MODE ? fresh() : load();
 let editingId = null;
-function persist() { if (typeof localStorage !== 'undefined') localStorage.setItem(KEY,JSON.stringify(state)); }
+function persist() {
+  if (globalThis.MONSTER_PORTAL_MODE) {
+    globalThis.MonsterPortal?.persist(state);
+  } else if (typeof localStorage !== 'undefined') localStorage.setItem(KEY,JSON.stringify(state));
+}
 function configured(c) {
   for (const id of NUMBER_IDS) if (typeof c[id]!=='number'||!Number.isFinite(c[id]) || c[id] < 0 || (!MONEY_IDS.includes(id) && c[id] > 100)) return false;
   if(typeof c.pairsHighEnabled!=='boolean'||typeof c.pairsSeriesEnabled!=='boolean') return false;
@@ -349,7 +353,7 @@ function renderPairs() {
 function render() {
   CONFIG_IDS.forEach(id=>{const el=document.getElementById(id); if(el.type==='checkbox') el.checked=!!state.config[id]; else if(document.activeElement!==el) el.value=state.config[id];});
   document.getElementById('language').value=state.language;
-  document.getElementById('rosterRows').innerHTML=state.bowlers.map(b=>'<tr><td>'+safe(b.name)+'</td><td>'+b.handicap+'</td><td>'+b.hdcpCount+'</td><td>'+b.scratchCount+'</td><td>'+(b.high?'Yes':'No')+'</td><td>'+pairCount(state,b.id)+'</td><td><button class="secondary" data-edit="'+safe(b.id)+'">Edit</button> <button class="danger" data-remove="'+safe(b.id)+'">Remove</button></td></tr>').join('') || '<tr><td colspan="7">No bowlers registered yet.</td></tr>';
+  document.getElementById('rosterRows').innerHTML=state.bowlers.map(b=>'<tr><td>'+safe(b.name)+(b.email?'<br><small>'+safe(b.email)+'</small>':'')+'</td><td>'+b.handicap+'</td><td>'+b.hdcpCount+'</td><td>'+b.scratchCount+'</td><td>'+(b.high?'Yes':'No')+'</td><td>'+pairCount(state,b.id)+'</td><td><button class="secondary" data-edit="'+safe(b.id)+'">Edit</button> <button class="danger" data-remove="'+safe(b.id)+'">Remove</button></td></tr>').join('') || '<tr><td colspan="7">No bowlers registered yet.</td></tr>';
   for(const type of ['hdcp','scratch']) {
     document.getElementById(type+'Brackets').innerHTML=state.brackets[type].map((ids,i)=>'<div class="bracket"><div class="bracket-head"><strong>'+(type==='hdcp'?'Handicap':'Scratch')+' bracket #'+(i+1)+'</strong><button class="secondary no-print" data-download="'+type+':'+i+'">Download SVG image</button></div><div class="bracket-scroll">'+bracketGraphic(ids,type,state.bowlers,i)+'</div></div>').join('') || '<p class="hint">No brackets generated. At least seven different bowlers must select this event.</p>';
   }
@@ -426,7 +430,7 @@ function setup() {
   ['Hdcp','Scratch'].forEach(t=>document.getElementById('join'+t).addEventListener('change',toggleCounts));
   document.getElementById('bowlerForm').addEventListener('submit',e=>{
     e.preventDefault();
-    const name=document.getElementById('name').value.trim(),handicap=Number(document.getElementById('handicap').value);
+    const name=document.getElementById('name').value.trim(),email=document.getElementById('bowlerEmail').value.trim().toLowerCase(),handicap=Number(document.getElementById('handicap').value);
     const hdcpCount=document.getElementById('joinHdcp').checked?Number(document.getElementById('hdcpCount').value):0;
     const scratchCount=document.getElementById('joinScratch').checked?Number(document.getElementById('scratchCount').value):0;
     if(!name || !Number.isInteger(handicap)||handicap<0||handicap>300||![hdcpCount,scratchCount].every(n=>Number.isInteger(n)&&n>=0)||
@@ -435,7 +439,8 @@ function setup() {
     if(editingId && state.bowlers.some(b=>b.id!==editingId&&b.name.toLowerCase()===name.toLowerCase())){status('A bowler with that name is already registered.');return;}
     const prior=state.bowlers.find(b=>b.id===editingId);
     const onTeam=editingId&&pairCount(state,editingId)>0;
-    const bowler={id:editingId||String(Date.now())+Math.random().toString(36).slice(2),name,handicap,hdcpCount,scratchCount,high:document.getElementById('joinHigh').checked,pairs:document.getElementById('joinPairs').checked||!!onTeam,scores:prior?.scores||blankScores()};
+    if(email&&state.bowlers.some(b=>b.id!==editingId&&b.email===email)){status('That login email is already linked to another bowler.');return;}
+    const bowler={id:editingId||String(Date.now())+Math.random().toString(36).slice(2),name,email,handicap,hdcpCount,scratchCount,high:document.getElementById('joinHigh').checked,pairs:document.getElementById('joinPairs').checked||!!onTeam,scores:prior?.scores||blankScores()};
     if(prior) state.bowlers[state.bowlers.indexOf(prior)]=bowler;else state.bowlers.push(bowler);
     // Registration changes invalidate the bracket draw; manually added teams keep their member IDs.
     state.brackets={hdcp:[],scratch:[]};state.generated=false;
@@ -444,7 +449,7 @@ function setup() {
   document.getElementById('cancelEdit').addEventListener('click',resetForm);
   document.getElementById('rosterRows').addEventListener('click',e=>{
     const edit=e.target.closest('[data-edit]'),remove=e.target.closest('[data-remove]');
-    if(edit){const b=state.bowlers.find(x=>x.id===edit.dataset.edit);if(!b)return;editingId=b.id;document.getElementById('name').value=b.name;document.getElementById('handicap').value=b.handicap;document.getElementById('joinHdcp').checked=b.hdcpCount>0;document.getElementById('joinScratch').checked=b.scratchCount>0;document.getElementById('joinHigh').checked=b.high;document.getElementById('joinPairs').checked=b.pairs;document.getElementById('hdcpCount').value=b.hdcpCount||1;document.getElementById('scratchCount').value=b.scratchCount||1;document.getElementById('saveBowler').textContent='Save changes';document.getElementById('cancelEdit').classList.remove('hidden');toggleCounts();document.getElementById('name').focus();}
+    if(edit){const b=state.bowlers.find(x=>x.id===edit.dataset.edit);if(!b)return;editingId=b.id;document.getElementById('name').value=b.name;document.getElementById('bowlerEmail').value=b.email||'';document.getElementById('handicap').value=b.handicap;document.getElementById('joinHdcp').checked=b.hdcpCount>0;document.getElementById('joinScratch').checked=b.scratchCount>0;document.getElementById('joinHigh').checked=b.high;document.getElementById('joinPairs').checked=b.pairs;document.getElementById('hdcpCount').value=b.hdcpCount||1;document.getElementById('scratchCount').value=b.scratchCount||1;document.getElementById('saveBowler').textContent='Save changes';document.getElementById('cancelEdit').classList.remove('hidden');toggleCounts();document.getElementById('name').focus();}
     if(remove){const b=state.bowlers.find(x=>x.id===remove.dataset.remove);if(!b||!confirm('Remove '+b.name+' and their Doubles teams?'))return;state.bowlers=state.bowlers.filter(x=>x.id!==b.id);state.brackets={hdcp:[],scratch:[]};state.generated=false;state.pairs=state.pairs.filter(ids=>!ids.includes(b.id));persist();render();status('Bowler and their Doubles teams removed. Generate brackets again.');}
   });
   document.getElementById('generate').addEventListener('click',()=>{
@@ -500,6 +505,7 @@ function setup() {
     b.scores[e.target.dataset.game]=raw===''?null:Number(raw);persist();render();status('Score saved.');
   });
   document.getElementById('startNew').addEventListener('click',async()=>{
+    if(globalThis.MONSTER_PORTAL_MODE){ await globalThis.MonsterPortal?.startNew(); return; }
     let confirmedSave=false;
     try { confirmedSave=await downloadBackup(); }
     catch(e) { status('Backup was not saved. Competition data was kept.');return; }
@@ -513,12 +519,42 @@ function setup() {
       const packageData=JSON.parse(await file.text());
       if(!validBackup(packageData)){status('This is not a valid Monster Bowling backup.');return;}
       if(!confirm('Replace the current competition with this backup?'))return;
-      localStorage.setItem(KEY,JSON.stringify(packageData.competition));state=load();resetForm();document.getElementById('addPairForm').reset();render();status('Backup restored.');
+      if(globalThis.MONSTER_PORTAL_MODE){state=packageData.competition;persist();}
+      else {localStorage.setItem(KEY,JSON.stringify(packageData.competition));state=load();}
+      resetForm();document.getElementById('addPairForm').reset();render();status('Backup restored.');
     } catch { status('Could not read the JSON backup.'); }
     finally { e.target.value=''; }
   });
   toggleCounts();render();
 }
+if(typeof window!=='undefined') window.BowlingApp={
+  fresh,
+  setState(data){
+    if(!data||!Array.isArray(data.bowlers)||!data.config) throw new Error('Invalid competition data');
+    state={...fresh(),...data,config:{...DEFAULT_CONFIG,...data.config}};
+    resetForm();render();
+  },
+  getState(){return structuredClone(state);},
+  exportBackup:downloadBackup,
+  bracketGraphic,
+  snapshot(){
+    const report=reportSummary(state),awards=calculate(state).awards;
+    const names=Object.fromEntries(state.bowlers.map(b=>[b.id,b.name]));
+    const publicData={
+      updatedAt:new Date().toISOString(),
+      bowlers:state.bowlers.map(({id,name,handicap,scores,high})=>({id,name,handicap,scores,high})),
+      brackets:state.brackets,
+      pairs:state.pairs,
+      awards:awards.map(({id,category,description,amount})=>({name:names[id]||'Bowler',category,description,amount})),
+      pending:report.pending
+    };
+    const personal=state.bowlers.filter(b=>b.email).map(b=>({
+      email:b.email.trim().toLowerCase(),
+      data:report.rows.find(r=>r.id===b.id)
+    }));
+    return {publicData,personal};
+  }
+};
 if(typeof document!=='undefined') setup();
 if(typeof module!=='undefined') module.exports={fresh,buildBrackets,addTeamByNames,pairCount,bracketGraphic,calculate,reportSummary,backupPackage,validBackup,rankAwards,configured,complete,assignedCount};
 

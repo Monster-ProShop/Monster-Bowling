@@ -1,0 +1,14 @@
+{
+  "name": "monster-bowling",
+  "private": true,
+  "scripts": {
+    "build:function": "node scripts/build-function.cjs"
+  },
+  "dependencies": {
+    "jose": "^6.1.0",
+    "pg": "^8.16.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}
