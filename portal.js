@@ -9,11 +9,23 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
   const show = id => sections.forEach(name => $(name).classList.toggle('hidden', name !== id));
   const notice = message => { $('portalNotice').textContent = message; };
   const fail = error => notice(error?.message || String(error));
-  let client, user, admin = false, current = null, saveJob = null, saving = false, verificationEmail = '', reauth = false, sessionExpired = false, lastEmail = '';
+  let client, user, admin = false, current = null, saveJob = null, saving = false, verificationEmail = '', reauth = false, sessionExpired = false, needsSessionReset = false, lastEmail = '';
   const updateAuthButton = () => {
     $('portalLogin').textContent = user && !sessionExpired ? 'Log out' : 'Log in';
     $('portalLogin').classList.remove('hidden');
   };
+  const newClient = () => createClient(cfg.url,{auth:{fetchOptions:{credentials:'include',cache:'no-store'}}});
+  async function resetExpiredSession() {
+    if (!needsSessionReset) return;
+    try { await client?.auth.signOut(); } catch {}
+    // Recreating the client also drops any expired session cached by the SDK.
+    client = newClient();
+    user = null;
+    admin = false;
+    sessionExpired = false;
+    needsSessionReset = false;
+    updateAuthButton();
+  }
 
   async function api(path, method = 'GET', body) {
     let token = null;
@@ -22,6 +34,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       if (result.error || !result.data?.token) {
         lastEmail = user.email || lastEmail;
         sessionExpired = true;
+        needsSessionReset = true;
         updateAuthButton();
         notice('Your session expired. Log in again to continue; the information on this screen is preserved.');
         throw result.error || new Error('Session expired. Sign in again.');
@@ -38,6 +51,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       if (result.status === 401 && user) {
         lastEmail = user.email || lastEmail;
         sessionExpired = true;
+        needsSessionReset = true;
         updateAuthButton();
         notice('Your session expired. Log in again to continue; the information on this screen is preserved.');
       }
@@ -186,15 +200,22 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       $('loginForm').querySelector('button[type=submit]').disabled = true;
       return;
     }
-    client = createClient(cfg.url,{auth:{fetchOptions:{credentials:'include'}}});
+    client = newClient();
     $('loginForm').addEventListener('submit',async event => {
       event.preventDefault();
       try {
         const email = $('loginEmail').value.trim().toLowerCase(), password = $('loginPassword').value;
         const selected = $('loginCompetition').value;
         if (!selected && email !== 'monsterproshop@outlook.com') throw new Error('Choose a league or tournament.');
-        const {data,error} = await client.auth.signIn.email({email,password});
+        await resetExpiredSession();
+        let {data,error} = await client.auth.signIn.email({email,password});
+        if (error && /expired|session/i.test(error.message || String(error))) {
+          needsSessionReset = true;
+          await resetExpiredSession();
+          ({data,error} = await client.auth.signIn.email({email,password}));
+        }
         if (error) throw error;
+        needsSessionReset = false;
         $('loginPassword').value = '';
         await identify(data.user,selected);
       } catch (error) { fail(error); }
@@ -267,6 +288,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     user = null;
     admin = false;
     sessionExpired = true;
+    needsSessionReset = true;
     show('portalAuth');
     updateAuthButton();
     notice((error?.message || 'Session expired.') + ' Use Log in to continue.');
