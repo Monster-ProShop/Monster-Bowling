@@ -1,0 +1,9 @@
+{
+  "name": "Brackets by ProDrillOS",
+  "short_name": "Brackets",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f8fb",
+  "theme_color": "#071d43",
+  "icons": [{"src":"assets/app-icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}

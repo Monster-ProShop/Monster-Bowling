@@ -6,7 +6,8 @@
   },
   "dependencies": {
     "jose": "^6.1.0",
-    "pg": "^8.16.0"
+    "pg": "^8.16.0",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "esbuild": "^0.25.0"

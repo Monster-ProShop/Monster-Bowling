@@ -1,8 +1,9 @@
 const KEY = 'monster-bowling-v2';
-const DEFAULT_CONFIG = {hdcpBuyin:10,hdcpFirst:50,hdcpSecond:25,scratchBuyin:10,scratchFirst:50,scratchSecond:25,highBuyin:20,highPayout:100,pairsBuyin:20,pairsGamePayout:50,pairsSeriesPayout:50,pairsHighEnabled:true,pairsSeriesEnabled:true};
+const DEFAULT_CONFIG = {hdcpBuyin:10,hdcpPayoutMode:'percent',hdcpFirst:50,hdcpSecond:25,hdcpFirstAmount:250,hdcpSecondAmount:100,scratchBuyin:10,scratchPayoutMode:'percent',scratchFirst:50,scratchSecond:25,scratchFirstAmount:250,scratchSecondAmount:100,highBuyin:20,highPayout:100,pairsBuyin:20,pairsGamePayout:50,pairsSeriesPayout:50,pairsHighEnabled:true,pairsSeriesEnabled:true};
 const CONFIG_IDS = Object.keys(DEFAULT_CONFIG);
-const MONEY_IDS = CONFIG_IDS.filter(id=>id.endsWith('Buyin'));
+const MONEY_IDS = CONFIG_IDS.filter(id=>id.endsWith('Buyin')||id.endsWith('Amount'));
 const NUMBER_IDS = CONFIG_IDS.filter(id=>typeof DEFAULT_CONFIG[id]==='number');
+const PERCENT_IDS = ['hdcpFirst','hdcpSecond','scratchFirst','scratchSecond','highPayout','pairsGamePayout','pairsSeriesPayout'];
 const money = cents => '$' + (cents / 100).toFixed(2);
 const cents = value => Math.round(Number(value) * 100);
 const safe = value => String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -105,7 +106,7 @@ function load() {
     if (!raw || !Array.isArray(raw.bowlers)) return fresh();
     const config={...DEFAULT_CONFIG};
     CONFIG_IDS.forEach(id=>{if(raw.config && Object.hasOwn(raw.config,id)) config[id]=raw.config[id];});
-    return {config,bowlers:raw.bowlers.map(({quin,...b})=>({...b,email:typeof b.email==='string'?b.email:'',high:!!b.high,pairs:!!b.pairs,scores:{...blankScores(),...b.scores}})),brackets:raw.brackets || {hdcp:[],scratch:[]},generated:!!raw.generated,highGenerated:!!raw.highGenerated,pairs:Array.isArray(raw.pairs)?raw.pairs:[],pairsGenerated:!!raw.pairsGenerated,language:raw.language==='es'?'es':'en'};
+    return {config,bowlers:raw.bowlers.map(({quin,...b})=>({...b,email:typeof b.email==='string'?b.email:'',paid:!!b.paid,high:!!b.high,pairs:!!b.pairs,scores:{...blankScores(),...b.scores}})),brackets:raw.brackets || {hdcp:[],scratch:[]},generated:!!raw.generated,highGenerated:!!raw.highGenerated,pairs:Array.isArray(raw.pairs)?raw.pairs:[],pairsGenerated:!!raw.pairsGenerated,language:raw.language==='es'?'es':'en'};
   } catch { return fresh(); }
 }
 let state = typeof localStorage === 'undefined' || globalThis.MONSTER_PORTAL_MODE ? fresh() : load();
@@ -116,9 +117,10 @@ function persist() {
   } else if (typeof localStorage !== 'undefined') localStorage.setItem(KEY,JSON.stringify(state));
 }
 function configured(c) {
-  for (const id of NUMBER_IDS) if (typeof c[id]!=='number'||!Number.isFinite(c[id]) || c[id] < 0 || (!MONEY_IDS.includes(id) && c[id] > 100)) return false;
+  for (const id of NUMBER_IDS) if (typeof c[id]!=='number'||!Number.isFinite(c[id]) || c[id] < 0 || (PERCENT_IDS.includes(id) && c[id] > 100)) return false;
+  if(!['percent','fixed'].includes(c.hdcpPayoutMode)||!['percent','fixed'].includes(c.scratchPayoutMode)) return false;
   if(typeof c.pairsHighEnabled!=='boolean'||typeof c.pairsSeriesEnabled!=='boolean') return false;
-  return c.hdcpFirst+c.hdcpSecond <= 100 && c.scratchFirst+c.scratchSecond <= 100 &&
+  return (c.hdcpPayoutMode==='fixed'||c.hdcpFirst+c.hdcpSecond <= 100) && (c.scratchPayoutMode==='fixed'||c.scratchFirst+c.scratchSecond <= 100) &&
     (c.pairsHighEnabled || c.pairsSeriesEnabled) &&
     (c.pairsHighEnabled?c.pairsGamePayout:0)+(c.pairsSeriesEnabled?c.pairsSeriesPayout:0) <= 100;
 }
@@ -274,7 +276,8 @@ function calculate(state) {
       if(!finalists){pending.push(type+' bracket #'+(i+1)+' needs all three scores for every entrant.');continue;}
       const pool=cents(c[type+'Buyin'])*ids.filter(Boolean).length;
       const value=p=>game(p,3,type==='hdcp');
-      awards.push(...rankAwards(finalists,value,pool,[c[type+'First'],c[type+'Second']],(type==='hdcp'?'HDCP':'Scratch')+' bracket #'+(i+1),type));
+      const payouts=c[type+'PayoutMode']==='fixed'?[cents(c[type+'FirstAmount']),cents(c[type+'SecondAmount'])]:[Math.round(pool*c[type+'First']/100),Math.round(pool*c[type+'Second']/100)];
+      awards.push(...rankAwards(finalists,value,100,payouts,(type==='hdcp'?'HDCP':'Scratch')+' bracket #'+(i+1),type));
     }
   }
   const high=bowlers.filter(b=>b.high);
@@ -304,10 +307,11 @@ function reportSummary(data) {
     const winnings=result.awards.filter(a=>a.id===b.id);
     const due=charges.reduce((n,x)=>n+x.amount,0), won=winnings.reduce((n,x)=>n+x.amount,0);
     const eventNet=Object.fromEntries(['hdcp','scratch','high','pairs'].map(type=>[type,winnings.filter(x=>x.category===type).reduce((n,x)=>n+x.amount,0)-charges.filter(x=>x.category===type).reduce((n,x)=>n+x.amount,0)]));
-    return {id:b.id,name:b.name,charges,due,winnings,won,eventNet,net:won-due};
+    const paid=!!b.paid, outstanding=paid?0:due;
+    return {id:b.id,name:b.name,paid,charges,due,outstanding,winnings,won,eventNet,net:won-due};
   });
-  const collected=rows.reduce((n,r)=>n+r.due,0), awarded=rows.reduce((n,r)=>n+r.won,0);
-  return {rows,collected,awarded,net:awarded-collected,pending:result.pending};
+  const collected=rows.reduce((n,r)=>n+r.due,0), received=rows.reduce((n,r)=>n+(r.paid?r.due:0),0), outstanding=collected-received, awarded=rows.reduce((n,r)=>n+r.won,0);
+  return {rows,collected,received,outstanding,awarded,net:awarded-collected,pending:result.pending};
 }
 function balanceText(amount) { return (amount<0?'−':amount>0?'+':'')+money(Math.abs(amount)); }
 function balanceClass(amount) { return amount<0?'balance-negative':amount>0?'balance-positive':'balance-zero'; }
@@ -353,7 +357,7 @@ function renderPairs() {
 function render() {
   CONFIG_IDS.forEach(id=>{const el=document.getElementById(id); if(el.type==='checkbox') el.checked=!!state.config[id]; else if(document.activeElement!==el) el.value=state.config[id];});
   document.getElementById('language').value=state.language;
-  document.getElementById('rosterRows').innerHTML=state.bowlers.map(b=>'<tr><td>'+safe(b.name)+(b.email?'<br><small>'+safe(b.email)+'</small>':'')+'</td><td>'+b.handicap+'</td><td>'+b.hdcpCount+'</td><td>'+b.scratchCount+'</td><td>'+(b.high?'Yes':'No')+'</td><td>'+pairCount(state,b.id)+'</td><td><button class="secondary" data-edit="'+safe(b.id)+'">Edit</button> <button class="danger" data-remove="'+safe(b.id)+'">Remove</button></td></tr>').join('') || '<tr><td colspan="7">No bowlers registered yet.</td></tr>';
+  document.getElementById('rosterRows').innerHTML=state.bowlers.map(b=>'<tr><td>'+safe(b.name)+(b.email?'<br><small>'+safe(b.email)+'</small>':'')+'</td><td>'+b.handicap+'</td><td>'+b.hdcpCount+'</td><td>'+b.scratchCount+'</td><td>'+(b.high?'Yes':'No')+'</td><td>'+pairCount(state,b.id)+'</td><td><label class="paid-toggle"><input type="checkbox" data-paid="'+safe(b.id)+'" '+(b.paid?'checked':'')+'> Paid</label></td><td><button class="secondary" data-edit="'+safe(b.id)+'">Edit</button> <button class="danger" data-remove="'+safe(b.id)+'">Remove</button></td></tr>').join('') || '<tr><td colspan="8">No bowlers registered yet.</td></tr>';
   for(const type of ['hdcp','scratch']) {
     document.getElementById(type+'Brackets').innerHTML=state.brackets[type].map((ids,i)=>'<div class="bracket"><div class="bracket-head"><strong>'+(type==='hdcp'?'Handicap':'Scratch')+' bracket #'+(i+1)+'</strong><button class="secondary no-print" data-download="'+type+':'+i+'">Download SVG image</button></div><div class="bracket-scroll">'+bracketGraphic(ids,type,state.bowlers,i)+'</div></div>').join('') || '<p class="hint">No brackets generated. At least seven different bowlers must select this event.</p>';
   }
@@ -372,8 +376,8 @@ function render() {
   ];
   document.getElementById('reportNotice').innerHTML=notes.length?'<p class="notice">'+safe(notes.join(' · '))+(report.pending.length?' Balances may change when pending results are entered.':'')+'</p>':'';
   const list=(items,label)=>items.length?'<ul class="breakdown">'+items.map(x=>'<li>'+safe(x.label||x.description)+' <span class="detail-amount">'+money(x.amount)+'</span></li>').join('')+'</ul>':'<span class="hint">'+label+'</span>';
-  document.getElementById('reportRows').innerHTML=report.rows.map(r=>'<tr><td><strong>'+safe(r.name)+'</strong></td><td>'+list(r.charges,'No entries')+'</td><td class="money">'+money(r.due)+'</td><td>'+list(r.winnings,'No winnings')+'</td><td class="money">'+money(r.won)+'</td>'+['hdcp','scratch','high','pairs'].map(t=>'<td class="money '+balanceClass(r.eventNet[t])+'">'+balanceText(r.eventNet[t])+'</td>').join('')+'<td class="money '+balanceClass(r.net)+'">'+balanceText(r.net)+'</td></tr>').join('')||'<tr><td colspan="10">No bowlers registered yet.</td></tr>';
-  document.getElementById('reportTotals').innerHTML='<div>Total charges<strong>'+money(report.collected)+'</strong></div><div>Total winnings<strong>'+money(report.awarded)+'</strong></div><div>Combined bowler balance<strong class="'+balanceClass(report.net)+'">'+balanceText(report.net)+'</strong></div>';
+  document.getElementById('reportRows').innerHTML=report.rows.map(r=>'<tr><td><strong>'+safe(r.name)+'</strong></td><td>'+list(r.charges,'No entries')+'</td><td class="money">'+money(r.due)+'</td><td>'+(r.paid?'Yes':'No')+'</td><td class="money balance-negative">'+money(r.outstanding)+'</td><td>'+list(r.winnings,'No winnings')+'</td><td class="money">'+money(r.won)+'</td>'+['hdcp','scratch','high','pairs'].map(t=>'<td class="money '+balanceClass(r.eventNet[t])+'">'+balanceText(r.eventNet[t])+'</td>').join('')+'<td class="money '+balanceClass(r.net)+'">'+balanceText(r.net)+'</td></tr>').join('')||'<tr><td colspan="12">No bowlers registered yet.</td></tr>';
+  document.getElementById('reportTotals').innerHTML='<div>Total charges<strong>'+money(report.collected)+'</strong></div><div>Payments received<strong>'+money(report.received)+'</strong></div><div>Outstanding<strong>'+money(report.outstanding)+'</strong></div><div>Total winnings<strong>'+money(report.awarded)+'</strong></div><div>Combined bowler balance<strong class="'+balanceClass(report.net)+'">'+balanceText(report.net)+'</strong></div>';
   translateUI();
 }
 function resetForm() {
@@ -422,7 +426,7 @@ function setup() {
     document.querySelectorAll('.panel').forEach(x=>x.classList.toggle('active',x.id===btn.dataset.tab));render();
   }));
   CONFIG_IDS.forEach(id=>document.getElementById(id).addEventListener('change',e=>{
-    const value=e.target.type==='checkbox'?e.target.checked:num(e.target.value,NaN);
+    const value=e.target.type==='checkbox'?e.target.checked:(id.endsWith('PayoutMode')?e.target.value:num(e.target.value,NaN));
     const candidate={...state.config,[id]:value};
     if((e.target.type!=='checkbox'&&!e.target.value)||!configured(candidate)){status('Check the buy-ins and payout percentages. Keep enabled Doubles payouts at 100% or less.');if(e.target.type==='checkbox')e.target.checked=state.config[id];else e.target.value=state.config[id];return;}
     state.config=candidate;persist();render();status('Configuration saved.');
@@ -440,7 +444,7 @@ function setup() {
     const prior=state.bowlers.find(b=>b.id===editingId);
     const onTeam=editingId&&pairCount(state,editingId)>0;
     if(email&&state.bowlers.some(b=>b.id!==editingId&&b.email===email)){status('That login email is already linked to another bowler.');return;}
-    const bowler={id:editingId||String(Date.now())+Math.random().toString(36).slice(2),name,email,handicap,hdcpCount,scratchCount,high:document.getElementById('joinHigh').checked,pairs:document.getElementById('joinPairs').checked||!!onTeam,scores:prior?.scores||blankScores()};
+    const bowler={id:editingId||String(Date.now())+Math.random().toString(36).slice(2),name,email,handicap,hdcpCount,scratchCount,high:document.getElementById('joinHigh').checked,pairs:document.getElementById('joinPairs').checked||!!onTeam,scores:prior?.scores||blankScores(),paid:prior?.paid||false};
     if(prior) state.bowlers[state.bowlers.indexOf(prior)]=bowler;else state.bowlers.push(bowler);
     // Registration changes invalidate the bracket draw; manually added teams keep their member IDs.
     state.brackets={hdcp:[],scratch:[]};state.generated=false;
@@ -448,7 +452,8 @@ function setup() {
   });
   document.getElementById('cancelEdit').addEventListener('click',resetForm);
   document.getElementById('rosterRows').addEventListener('click',e=>{
-    const edit=e.target.closest('[data-edit]'),remove=e.target.closest('[data-remove]');
+    const edit=e.target.closest('[data-edit]'),remove=e.target.closest('[data-remove]'),paid=e.target.closest('[data-paid]');
+    if(paid){const b=state.bowlers.find(x=>x.id===paid.dataset.paid);if(b){b.paid=paid.checked;persist();render();status(b.name+(b.paid?' marked paid.':' marked unpaid.'));}return;}
     if(edit){const b=state.bowlers.find(x=>x.id===edit.dataset.edit);if(!b)return;editingId=b.id;document.getElementById('name').value=b.name;document.getElementById('bowlerEmail').value=b.email||'';document.getElementById('handicap').value=b.handicap;document.getElementById('joinHdcp').checked=b.hdcpCount>0;document.getElementById('joinScratch').checked=b.scratchCount>0;document.getElementById('joinHigh').checked=b.high;document.getElementById('joinPairs').checked=b.pairs;document.getElementById('hdcpCount').value=b.hdcpCount||1;document.getElementById('scratchCount').value=b.scratchCount||1;document.getElementById('saveBowler').textContent='Save changes';document.getElementById('cancelEdit').classList.remove('hidden');toggleCounts();document.getElementById('name').focus();}
     if(remove){const b=state.bowlers.find(x=>x.id===remove.dataset.remove);if(!b||!confirm('Remove '+b.name+' and their Doubles teams?'))return;state.bowlers=state.bowlers.filter(x=>x.id!==b.id);state.brackets={hdcp:[],scratch:[]};state.generated=false;state.pairs=state.pairs.filter(ids=>!ids.includes(b.id));persist();render();status('Bowler and their Doubles teams removed. Generate brackets again.');}
   });
@@ -505,7 +510,7 @@ function setup() {
     b.scores[e.target.dataset.game]=raw===''?null:Number(raw);persist();render();status('Score saved.');
   });
   document.getElementById('startNew').addEventListener('click',async()=>{
-    if(globalThis.MONSTER_PORTAL_MODE){ await globalThis.MonsterPortal?.startNew(); return; }
+    if(globalThis.MONSTER_PORTAL_MODE){ try{await globalThis.MonsterPortal?.startNew();}catch(error){status(error.message||'Could not save the session.');} return; }
     let confirmedSave=false;
     try { confirmedSave=await downloadBackup(); }
     catch(e) { status('Backup was not saved. Competition data was kept.');return; }
@@ -527,6 +532,18 @@ function setup() {
   });
   toggleCounts();render();
 }
+function matchupSummary(data) {
+  const names=Object.fromEntries(data.bowlers.map(b=>[b.id,b.name]));
+  const rounds=[new Map(),new Map(),new Map()];
+  const add=(round,a,b)=>{if(!a||!b)return;for(const [x,y] of [[a,b],[b,a]]){if(!rounds[round].has(x))rounds[round].set(x,[]);rounds[round].get(x).push(names[y]);}};
+  for(const type of ['hdcp','scratch']) for(const ids of data.brackets[type]||[]) {
+    for(let i=0;i<8;i+=2)add(0,ids[i],ids[i+1]);
+    const first=[];for(let i=0;i<8;i+=2){const r=match([ids[i],ids[i+1]],1,type==='hdcp',data.bowlers);first.push(r.winners.length===1?r.winners[0].id:null);}
+    add(1,first[0],first[1]);add(1,first[2],first[3]);
+    const second=[match(first.slice(0,2),2,type==='hdcp',data.bowlers),match(first.slice(2,4),2,type==='hdcp',data.bowlers)].map(r=>r.winners.length===1?r.winners[0].id:null);add(2,second[0],second[1]);
+  }
+  return rounds.map(map=>[...map].map(([id,opponents])=>({id,name:names[id],opponents})).sort((a,b)=>a.name.localeCompare(b.name)));
+}
 if(typeof window!=='undefined') window.BowlingApp={
   fresh,
   setState(data){
@@ -546,7 +563,9 @@ if(typeof window!=='undefined') window.BowlingApp={
       brackets:state.brackets,
       pairs:state.pairs,
       awards:awards.map(({id,category,description,amount})=>({name:names[id]||'Bowler',category,description,amount})),
-      pending:report.pending
+      pending:report.pending,
+      matchups:matchupSummary(state),
+      standings:[1,2,3].map(g=>state.bowlers.filter(b=>hasGame(b,g)).map(b=>({name:b.name,score:game(b,g,true)})).sort((a,b)=>b.score-a.score||a.name.localeCompare(b.name)))
     };
     const personal=state.bowlers.filter(b=>b.email).map(b=>({
       email:b.email.trim().toLowerCase(),

@@ -75,10 +75,13 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     $('dashboardHeading').textContent = admin ? 'Manage leagues and tournaments' : 'Available leagues and tournaments';
     $('createCompetition').classList.toggle('hidden', !admin);
     $('accountEmail').textContent = user.email;
-    $('competitionCards').innerHTML = rows.map(c =>
+    const sessions=await Promise.all(rows.map(c=>api('/sessions?competition_id='+encodeURIComponent(c.id))));
+    $('competitionCards').innerHTML = rows.map((c,i) =>
       '<article class="card competition-card"><h3>' + esc(c.name) + '</h3><p>' + esc(c.kind) +
       ' · ' + esc(c.status) + '</p><button data-open="' + esc(c.id) + '">' +
-      (admin ? 'Manage competition' : 'View results') + '</button></article>'
+      (admin ? 'Manage current session' : 'View current session') + '</button><div class="session-list"><strong>Saved sessions</strong>'+
+      (sessions[i].length?sessions[i].map(x=>'<div class="session-row"><span>'+esc(x.label)+'<br><small>'+esc(String(x.session_date).slice(0,10))+'</small></span><button class="secondary" data-session="'+esc(x.id)+'">View</button></div>').join(''):'<p class="hint">No saved sessions yet.</p>')+
+      '</div></article>'
     ).join('') || '<p>No competitions are available yet.</p>';
     show('portalDashboard');
   }
@@ -127,7 +130,6 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       notice('Editing ' + competition.name + '. Changes save to Neon.');
       return;
     }
-    await api('/join?id=' + encodeURIComponent(id), 'POST', {});
     const result = await api('/results?id=' + encodeURIComponent(id));
     renderViewer(result.results, result.personal);
     show('portalViewer');
@@ -157,7 +159,29 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       const balanceClass = personal.net < 0 ? 'balance-negative' : personal.net > 0 ? 'balance-positive' : 'balance-zero';
       finances = '<div class="card"><h2>Your balance — ' + esc(personal.name) + '</h2><h3>Entry charges</h3><ul>' + charges + '</ul><p>Total due: ' + dollars(personal.due) + '</p><h3>Winnings</h3><ul>' + winnings + '</ul><p>Total won: ' + dollars(personal.won) + '</p><p class="' + balanceClass + '">Balance: ' + dollars(personal.net) + '</p></div>';
     }
-    $('viewerContent').innerHTML = finances + scoreboard + brackets + pairs + awards;
+    const progress=(data.matchups||[]).map((round,i)=>'<div class="card"><h2>Game '+(i+1)+' matchups</h2>'+
+      (round.length?'<ul class="matchup-list">'+round.map(x=>'<li><strong>'+esc(x.name)+' ('+x.opponents.length+')</strong>: '+x.opponents.map(esc).join(', ')+'</li>').join('')+'</ul>':'<p class="hint">Matchups will appear when the previous game is decided.</p>')+
+      ((data.standings?.[i]||[]).length?'<h3>Standings after game '+(i+1)+'</h3><ol>'+data.standings[i].map(x=>'<li>'+esc(x.name)+' — '+esc(x.score)+'</li>').join('')+'</ol>':'')+'</div>').join('');
+    const notify='<div class="card no-print"><h2>Notifications for this event</h2><p>Choose the bowler whose updates you want for this bowling date.</p><div class="form-grid"><label>Bowler<select id="notifyBowler">'+data.bowlers.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(b=>'<option value="'+esc(b.id)+'">'+esc(b.name)+'</option>').join('')+'</select></label><label>Event date<input id="notifyDate" type="date" value="'+new Date().toLocaleDateString('en-CA')+'"></label><button id="enableNotifications" type="button">Notify me</button></div><p id="notifyStatus" class="hint"></p></div>';
+    $('viewerContent').innerHTML = notify + finances + progress + scoreboard + brackets + pairs + awards;
+    $('enableNotifications')?.addEventListener('click',async()=>{
+      try {
+        if(!('serviceWorker' in navigator)||!('PushManager' in window)||!cfg.vapidPublicKey) throw new Error('Notifications are not available on this device yet.');
+        if(await Notification.requestPermission()!=='granted') throw new Error('Notification permission was not granted.');
+        const registration=await navigator.serviceWorker.ready;
+        const key=Uint8Array.from(atob(cfg.vapidPublicKey.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
+        const subscription=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});
+        await api('/notifications','POST',{competitionId:current?.id,bowlerId:$('notifyBowler').value,eventDate:$('notifyDate').value,subscription});
+        $('notifyStatus').textContent='Notifications enabled for '+$('notifyBowler').selectedOptions[0].textContent+' on '+$('notifyDate').value+'.';
+      } catch(error){$('notifyStatus').textContent=error.message;}
+    });
+  }
+  async function openSavedSession(id) {
+    const result=await api('/session?id='+encodeURIComponent(id));
+    const rows=await listCompetitions(), competition=rows.find(c=>c.id===result.competitionId);
+    current=competition||{id:result.competitionId,name:'Competition'};
+    $('viewerCompetition').textContent=(competition?.name||'Competition')+' › '+result.label;
+    renderViewer(result.results,result.personal);show('portalViewer');
   }
   function queueSave(data) {
     if (!current || !admin) return;
@@ -171,7 +195,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       const job = saveJob;
       saveJob = null;
       try { await api('/save?id=' + encodeURIComponent(job.p_competition_id),'POST',
-        {state:job.p_state,results:job.p_results,personal:job.p_personal}); }
+        {state:job.p_state,results:job.p_results,personal:job.p_personal,eventDate:new Date().toLocaleDateString('en-CA')}); }
       catch (error) { saveJob = saveJob || job; notice('Save failed: ' + error.message + '. Your edits remain on this screen.'); break; }
       notice('Saved to Neon at ' + new Date().toLocaleTimeString());
     }
@@ -187,9 +211,16 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
   }
   async function startNew() {
     if (!admin) return;
+    const label=$('sessionLabel').value.trim(),date=$('sessionDate').value;
+    if(!label||!date) throw new Error('Enter a session name and date before saving.');
+    await drainSaves();
+    const state=window.BowlingApp.getState(),snapshot=window.BowlingApp.snapshot();
+    await api('/sessions','POST',{competitionId:current.id,label,date,state,results:snapshot.publicData,personal:snapshot.personal});
     await window.BowlingApp.exportBackup();
-    await refreshDashboard();
-    notice('Backup downloaded. Create another competition from the dashboard.');
+    state.bowlers=state.bowlers.map(b=>({...b,scores:{g1:null,g2:null,g3:null},paid:false}));
+    state.brackets={hdcp:[],scratch:[]};state.generated=false;state.highGenerated=false;
+    window.BowlingApp.setState(state);queueSave(state);await drainSaves();
+    $('sessionLabel').value='';notice(label+' was saved. The next session is ready with the roster preserved.');
   }
   window.MonsterPortal = {persist:queueSave,startNew};
 
@@ -201,12 +232,16 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       return;
     }
     client = newClient();
+    $('sessionDate').value=new Date().toLocaleDateString('en-CA');
+    if('serviceWorker' in navigator) await navigator.serviceWorker.register('/sw.js');
+    let installPrompt=null;
+    window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event;$('installCard').classList.remove('hidden');});
+    $('installApp').addEventListener('click',async()=>{if(!installPrompt)return;await installPrompt.prompt();installPrompt=null;$('installCard').classList.add('hidden');});
     $('loginForm').addEventListener('submit',async event => {
       event.preventDefault();
       try {
         const email = $('loginEmail').value.trim().toLowerCase(), password = $('loginPassword').value;
         const selected = $('loginCompetition').value;
-        if (!selected && email !== 'monsterproshop@outlook.com') throw new Error('Choose a league or tournament.');
         await resetExpiredSession();
         let {data,error} = await client.auth.signIn.email({email,password});
         if (error && /expired|session/i.test(error.message || String(error))) {
@@ -276,6 +311,8 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     $('competitionCards').addEventListener('click',event => {
       const button = event.target.closest('[data-open]');
       if (button) void openCompetition(button.dataset.open).catch(fail);
+      const session = event.target.closest('[data-session]');
+      if (session) void openSavedSession(session.dataset.session).catch(fail);
     });
     $('createCompetition').addEventListener('submit',event => void createCompetition(event).catch(fail));
     const {data,error} = await client.auth.getSession();
