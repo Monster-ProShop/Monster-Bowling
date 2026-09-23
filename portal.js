@@ -9,13 +9,23 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
   const show = id => sections.forEach(name => $(name).classList.toggle('hidden', name !== id));
   const notice = message => { $('portalNotice').textContent = message; };
   const fail = error => notice(error?.message || String(error));
-  let client, user, admin = false, current = null, saveJob = null, saving = false, verificationEmail = '', reauth = false;
+  let client, user, admin = false, current = null, saveJob = null, saving = false, verificationEmail = '', reauth = false, sessionExpired = false, lastEmail = '';
+  const updateAuthButton = () => {
+    $('portalLogin').textContent = user && !sessionExpired ? 'Log out' : 'Log in';
+    $('portalLogin').classList.remove('hidden');
+  };
 
   async function api(path, method = 'GET', body) {
     let token = null;
     if (user) {
       const result = await client.auth.token();
-      if (result.error || !result.data?.token) throw result.error || new Error('Session expired. Sign in again.');
+      if (result.error || !result.data?.token) {
+        lastEmail = user.email || lastEmail;
+        sessionExpired = true;
+        updateAuthButton();
+        notice('Your session expired. Log in again to continue; the information on this screen is preserved.');
+        throw result.error || new Error('Session expired. Sign in again.');
+      }
       token = result.data.token;
     }
     const result = await fetch(cfg.apiUrl + path, {
@@ -26,7 +36,9 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     const data = await result.json();
     if (!result.ok) {
       if (result.status === 401 && user) {
-        $('portalLogin').classList.remove('hidden');
+        lastEmail = user.email || lastEmail;
+        sessionExpired = true;
+        updateAuthButton();
         notice('Your session expired. Log in again to continue; the information on this screen is preserved.');
       }
       throw new Error(data.error || 'Request failed');
@@ -66,6 +78,9 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       notice('Verify your email before signing in.');
     }
     admin = !!(user && user.email?.toLowerCase() === 'monsterproshop@outlook.com' && user.emailVerified);
+    sessionExpired = false;
+    if (user?.email) lastEmail = user.email;
+    updateAuthButton();
     if (!user) {
       const rows = await listCompetitions();
       renderCompetitionOptions(rows.filter(c => c.status === 'open'), selected);
@@ -74,7 +89,6 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     }
     if (reauth && current) {
       reauth = false;
-      $('portalLogin').classList.add('hidden');
       if (admin) {
         show('managerApp');
         notice('Signed in again. Your competition information was preserved.');
@@ -182,7 +196,6 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
         const {data,error} = await client.auth.signIn.email({email,password});
         if (error) throw error;
         $('loginPassword').value = '';
-        $('portalLogin').classList.add('hidden');
         await identify(data.user,selected);
       } catch (error) { fail(error); }
     });
@@ -218,19 +231,24 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     });
     $('showRegister').addEventListener('click',() => $('registerForm').classList.toggle('hidden'));
     $('portalLogin').addEventListener('click',async () => {
-      const email = user?.email || '';
-      reauth = true;
+      if (user && !sessionExpired) {
+        await client.auth.signOut();
+        user = null; admin = false; current = null; reauth = false; sessionExpired = false;
+        updateAuthButton();
+        await identify(null);
+        notice('You are logged out.');
+        return;
+      }
+      const email = user?.email || lastEmail;
+      reauth = !!current;
       user = null;
       admin = false;
+      sessionExpired = false;
+      updateAuthButton();
       $('loginEmail').value = email;
       await identify(null,current?.id);
-      notice('Log in again to continue. Your open competition and bracket information are preserved.');
+      notice(current ? 'Log in again to continue. Your open competition and bracket information are preserved.' : 'Log in to continue.');
       $('loginPassword').focus();
-    });
-    $('signOut').addEventListener('click',async () => {
-      await client.auth.signOut(); user = null; admin = false; current = null; reauth = false;
-      $('portalLogin').classList.add('hidden');
-      await identify(null);
     });
     $('backDashboard').addEventListener('click',() => void refreshDashboard().catch(fail));
     $('viewerBack').addEventListener('click',() => void refreshDashboard().catch(fail));
@@ -243,5 +261,14 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     if (error) throw error;
     await identify(data?.user);
   }
-  boot().catch(fail);
+  boot().catch(error => {
+    // Session restoration can fail before an API request is made. Always recover
+    // to a usable login screen without replacing the in-memory competition.
+    user = null;
+    admin = false;
+    sessionExpired = true;
+    show('portalAuth');
+    updateAuthButton();
+    notice((error?.message || 'Session expired.') + ' Use Log in to continue.');
+  });
 })();
