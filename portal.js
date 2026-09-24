@@ -10,7 +10,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
   const localize = () => window.BowlingApp?.translateUI();
   const notice = message => { $('portalNotice').textContent = message;localize(); };
   const fail = error => notice(error?.message || String(error));
-  let client, user, role = 'user', admin = false, superAdmin = false, current = null, competitions = [], saveJob = null, saving = false, verificationEmail = '', reauth = false, sessionExpired = false, needsSessionReset = false, lastEmail = '';
+  let client, user, role = 'user', admin = false, superAdmin = false, current = null, competitions = [], accessUsers = [], saveJob = null, saving = false, verificationEmail = '', reauth = false, sessionExpired = false, needsSessionReset = false, lastEmail = '';
   const updateAuthButton = () => {
     $('portalLogin').textContent = user && !sessionExpired ? 'Log out' : 'Log in';
     $('portalLogin').classList.remove('hidden');
@@ -99,14 +99,26 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
   }
   async function loadUsers() {
     if(!superAdmin)return;
-    const users=await api('/users');
-    $('userAccessRows').innerHTML=users.map(account=>{
-      const isOwner=account.role==='superadmin',assigned=new Set(account.competition_ids||[]);
-      const options=isOwner?'<option>Admin</option>':'<option value="user"'+(account.role==='user'?' selected':'')+'>User</option><option value="manager"'+(account.role==='manager'?' selected':'')+'>Manager</option>';
-      const leagues=isOwner?'<span class="hint">All competitions</span>':competitions.map(c=>'<label><input type="checkbox" data-assignment="'+esc(c.id)+'" '+(assigned.has(c.id)?'checked':'')+(account.role==='manager'?'':' disabled')+'> '+esc(c.name)+'</label>').join('');
-      return '<div class="access-user card" data-user="'+esc(account.id)+'"><strong class="access-email">'+esc(account.email)+'</strong><label>Account type<select data-user-role '+(isOwner?'disabled':'')+'>'+options+'</select></label><div><strong>Managed competitions</strong><div class="league-checks">'+leagues+'</div></div>'+(isOwner?'':'<button type="button" data-save-access>Save access</button>')+'</div>';
-    }).join('')||'<p>No users found.</p>';
+    accessUsers=await api('/users');
+    $('userEmailOptions').innerHTML=accessUsers.map(account=>'<option value="'+esc(account.email)+'"></option>').join('');
+    $('userEmailSearch').value='';$('userSearchResults').innerHTML='';
+    $('userAccessRows').innerHTML=accessUsers.length?'<p class="hint">Search for and select a registered user.</p>':'<p>No users found.</p>';
     localize();
+  }
+  function renderAccessUser(account) {
+    if(!account){$('userAccessRows').innerHTML='<p class="hint">Search for and select a registered user.</p>';localize();return;}
+    const isOwner=account.role==='superadmin',assigned=new Set(account.competition_ids||[]);
+    const options=isOwner?'<option>Admin</option>':'<option value="user"'+(account.role==='user'?' selected':'')+'>User</option><option value="manager"'+(account.role==='manager'?' selected':'')+'>Manager</option>';
+    const leagues=isOwner?'<span class="hint">All competitions</span>':competitions.map(c=>'<label><input type="checkbox" data-assignment="'+esc(c.id)+'" '+(assigned.has(c.id)?'checked':'')+(account.role==='manager'?'':' disabled')+'> '+esc(c.name)+'</label>').join('');
+    $('userAccessRows').innerHTML='<div class="access-user card" data-user="'+esc(account.id)+'"><strong class="access-email">'+esc(account.email)+'</strong><label>Account type<select data-user-role '+(isOwner?'disabled':'')+'>'+options+'</select></label><div><strong>Managed competitions</strong><div class="league-checks">'+leagues+'</div></div>'+(isOwner?'':'<button type="button" data-save-access>Save access</button>')+'</div>';
+    localize();
+  }
+  function searchAccessUsers() {
+    const query=$('userEmailSearch').value.trim().toLowerCase(),exact=accessUsers.find(account=>account.email===query);
+    if(exact){$('userSearchResults').innerHTML='';renderAccessUser(exact);return;}
+    const matches=query?accessUsers.filter(account=>account.email.includes(query)).slice(0,12):[];
+    $('userSearchResults').innerHTML=matches.map(account=>'<button type="button" class="secondary" data-pick-user="'+esc(account.id)+'">'+esc(account.email)+'</button>').join('');
+    renderAccessUser(null);
   }
   async function identify(signedInUser, selected) {
     user = signedInUser || null;
@@ -398,6 +410,9 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       select.closest('[data-user]').querySelectorAll('[data-assignment]').forEach(input=>input.disabled=select.value!=='manager');
     });
     $('userAccessRows').addEventListener('click',event=>{const button=event.target.closest('[data-save-access]');if(button)void saveUserAccess(button.closest('[data-user]')).catch(fail);});
+    $('userEmailSearch').addEventListener('input',searchAccessUsers);
+    $('userEmailSearch').addEventListener('change',searchAccessUsers);
+    $('userSearchResults').addEventListener('click',event=>{const button=event.target.closest('[data-pick-user]');if(!button)return;const account=accessUsers.find(item=>item.id===button.dataset.pickUser);if(!account)return;$('userEmailSearch').value=account.email;$('userSearchResults').innerHTML='';renderAccessUser(account);});
     $('createCompetition').addEventListener('submit',event => void createCompetition(event).catch(fail));
     const {data,error} = await client.auth.getSession();
     if (error) throw error;

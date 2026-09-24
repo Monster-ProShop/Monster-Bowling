@@ -125,6 +125,7 @@ const ES = {
   'Session expired. Use Log in to continue.':'La sesión expiró. Use Iniciar sesión para continuar.',
   'Competitions':'Competencias','Users & access':'Usuarios y acceso','Change an account between User and Manager, then assign the leagues or tournaments that Manager can edit.':'Cambie una cuenta entre Usuario y Encargado y luego asigne las ligas o torneos que puede editar.',
   'SuperAdmin — Users & access':'SuperAdmin — Usuarios y acceso','Designate which registered users can manage a league or tournament, and choose exactly which competitions they can edit.':'Designe qué usuarios registrados pueden administrar una liga o torneo y elija exactamente qué competencias pueden editar.',
+  'Find user by email':'Buscar usuario por correo','Start typing an email address':'Comience a escribir un correo electrónico','Search for and select a registered user.':'Busque y seleccione un usuario registrado.',
   'Account type':'Tipo de cuenta','User':'Usuario','Manager':'Encargado','Admin':'Administrador','Managed competitions':'Competencias administradas','All competitions':'Todas las competencias','Save access':'Guardar acceso','No users found.':'No se encontraron usuarios.','User access saved.':'Acceso del usuario guardado.'
 };
 const originalText=new WeakMap();
