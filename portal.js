@@ -160,11 +160,16 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       : '<p>Results are pending.</p>') + '</div>';
     const pairs = '<div class="card"><h2>Doubles teams</h2><ul>' + (data.pairs || []).map(ids =>
       '<li>' + ids.map(id => esc(people[id]?.name || 'Bowler')).join(' &amp; ') + '</li>').join('') + '</ul></div>';
-    const brackets = ['hdcp','scratch'].map(type => '<div class="card"><h2>' + (type === 'hdcp' ? 'Handicap' : 'Scratch') + ' brackets</h2>' +
-      (data.brackets?.[type] || []).map((ids,i) => '<div class="bracket-scroll">' +
-        window.BowlingApp.bracketGraphic(ids,type,data.bowlers,i) + '</div>').join('') + '</div>').join('');
+    const bracketCards = bowlerId => ['hdcp','scratch'].map(type => {
+      const entries=(data.brackets?.[type]||[]).map((ids,index)=>({ids,index}))
+        .filter(entry=>!bowlerId||entry.ids.includes(bowlerId));
+      return '<div class="card"><h2>'+(type==='hdcp'?'Handicap':'Scratch')+' brackets</h2>'+
+        (entries.length?entries.map(entry=>'<div class="bracket-scroll">'+
+          window.BowlingApp.bracketGraphic(entry.ids,type,data.bowlers,entry.index)+'</div>').join(''):
+          '<p class="hint">'+(bowlerId?'This bowler is not entered in any '+(type==='hdcp'?'handicap':'scratch')+' brackets.':'No brackets generated.')+'</p>')+'</div>';
+    }).join('');
     const financeCard=value=>{
-      if(!value)return '<div id="balanceCard" class="card"><h2>Your balance</h2><p>Select your bowler above and enable notifications to link your balance.</p></div>';
+      if(!value)return '<div id="balanceCard" class="card"><h2>Your balance</h2><p>Select your bowler above and choose Show my balance.</p></div>';
       const personal=value;
       const charges = personal.charges?.map(x => '<li>' + esc(x.label) + ': ' + dollars(x.amount) + '</li>').join('') || '<li>No charges</li>';
       const winnings = personal.winnings?.map(x => '<li>' + esc(x.description) + ': ' + dollars(x.amount) + '</li>').join('') || '<li>No winnings</li>';
@@ -176,12 +181,15 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     const progress=(data.matchups||[]).map((round,i)=>'<div class="card"><h2>Game '+(i+1)+' matchups</h2>'+
       (round.length?'<ul class="matchup-list">'+round.map(x=>'<li><strong>'+esc(x.name)+' ('+x.opponents.length+')</strong>: '+x.opponents.map(esc).join(', ')+'</li>').join('')+'</ul>':'<p class="hint">Matchups will appear when the previous game is decided.</p>')+
       ((data.standings?.[i]||[]).length?'<h3>Standings after game '+(i+1)+'</h3><ol>'+data.standings[i].map(x=>'<li>'+esc(x.name)+' — '+esc(x.score)+'</li>').join('')+'</ol>':'')+'</div>').join('');
-    const notify='<div class="card no-print"><h2>Your bowler and notifications</h2><p>Choose your bowler to view the correct balance. Notifications are optional.</p><div class="form-grid"><label>Bowler<select id="notifyBowler">'+data.bowlers.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(b=>'<option value="'+esc(b.id)+'">'+esc(b.name)+'</option>').join('')+'</select></label><label>Event date<input id="notifyDate" type="date" value="'+esc(context.date||new Date().toLocaleDateString('en-CA'))+'"></label></div><div class="actions"><button id="showBalance" type="button">Show my balance</button><button id="enableNotifications" class="secondary" type="button">Enable notifications</button></div><p id="notifyStatus" class="hint"></p></div>';
-    $('viewerContent').innerHTML = notify + finances + progress + scoreboard + brackets + pairs + awards;
+    const notify='<div class="card no-print"><h2>Your bowler and notifications</h2><p>Choose your bowler to view the correct balance and only the brackets that include you. Notifications are optional.</p><div class="form-grid"><label>Bowler<select id="notifyBowler">'+data.bowlers.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(b=>'<option value="'+esc(b.id)+'"'+(b.id===personal?.id?' selected':'')+'>'+esc(b.name)+'</option>').join('')+'</select></label><label>Event date<input id="notifyDate" type="date" value="'+esc(context.date||new Date().toLocaleDateString('en-CA'))+'"></label></div><div class="actions"><button id="showBalance" type="button">Show my balance</button><button id="enableNotifications" class="secondary" type="button">Enable notifications</button></div><p id="notifyStatus" class="hint"></p></div>';
+    $('viewerContent').innerHTML = notify + finances + progress + scoreboard + '<div id="userBrackets">'+bracketCards(personal?.id)+'</div>' + pairs + awards;
+    const filterBrackets=bowlerId=>{$('userBrackets').innerHTML=bracketCards(bowlerId);};
+    $('notifyBowler')?.addEventListener('change',()=>filterBrackets($('notifyBowler').value));
     $('showBalance')?.addEventListener('click',async()=>{
       try {
         const linked=await api('/balance','POST',{competitionId:current?.id,bowlerId:$('notifyBowler').value,sessionId:context.sessionId});
         $('balanceCard').outerHTML=financeCard(linked.personal);
+        filterBrackets(linked.personal?.id||$('notifyBowler').value);
         $('notifyStatus').textContent='Balance linked to '+$('notifyBowler').selectedOptions[0].textContent+'. Notifications remain off.';
       } catch(error){$('notifyStatus').textContent=error.message;}
     });
@@ -194,7 +202,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
         const subscription=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});
         const linked=await api('/notifications','POST',{competitionId:current?.id,bowlerId:$('notifyBowler').value,eventDate:$('notifyDate').value,sessionId:context.sessionId,subscription});
         $('notifyStatus').textContent='Notifications enabled for '+$('notifyBowler').selectedOptions[0].textContent+' on '+$('notifyDate').value+'.';
-        if(linked.personal)$('balanceCard').outerHTML=financeCard(linked.personal);
+        if(linked.personal){$('balanceCard').outerHTML=financeCard(linked.personal);filterBrackets(linked.personal.id);}
       } catch(error){$('notifyStatus').textContent=error.message;}
     });
   }
