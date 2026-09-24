@@ -83,8 +83,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     renderCompetitionOptions(rows.filter(c => c.status === 'open'), $('loginCompetition').value);
     $('dashboardHeading').textContent = admin ? 'Manage leagues and tournaments' : 'Available leagues and tournaments';
     $('createCompetition').classList.toggle('hidden', !superAdmin);
-    $('dashboardTabs').classList.toggle('hidden',!superAdmin);
-    $('usersAccess').classList.add('hidden');$('dashboardCompetitions').classList.remove('hidden');
+    $('usersAccess').classList.toggle('hidden',!superAdmin);
     $('accountEmail').textContent = user.email;
     const sessions=await Promise.all(rows.map(c=>api('/sessions?competition_id='+encodeURIComponent(c.id))));
     $('competitionCards').innerHTML = rows.map((c,i) =>
@@ -94,6 +93,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       (sessions[i].length?sessions[i].map(x=>'<div class="session-row"><span>'+esc(x.label)+'<br><small>'+esc(String(x.session_date).slice(0,10))+'</small></span><button class="secondary" data-session="'+esc(x.id)+'">View</button></div>').join(''):'<p class="hint">No saved sessions yet.</p>')+
       '</div></article>'
     ).join('') || '<p>No competitions are available yet.</p>';
+    if(superAdmin)await loadUsers();
     show('portalDashboard');
     localize();
   }
@@ -392,12 +392,6 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       if (button) void openCompetition(button.dataset.open).catch(fail);
       const session = event.target.closest('[data-session]');
       if (session) void openSavedSession(session.dataset.session).catch(fail);
-    });
-    $('dashboardTabs').addEventListener('click',event=>{
-      const tab=event.target.closest('[data-dashboard-tab]');if(!tab)return;
-      const users=tab.dataset.dashboardTab==='users';$('dashboardCompetitions').classList.toggle('hidden',users);$('usersAccess').classList.toggle('hidden',!users);
-      [...$('dashboardTabs').querySelectorAll('button')].forEach(button=>button.classList.toggle('secondary',button!==tab));
-      if(users)void loadUsers().catch(fail);localize();
     });
     $('userAccessRows').addEventListener('change',event=>{
       const select=event.target.closest('[data-user-role]');if(!select)return;
