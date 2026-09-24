@@ -206,6 +206,13 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     }
     saving = false;
   }
+  async function flushSaves() {
+    while(saving) await new Promise(resolve=>setTimeout(resolve,50));
+    if(saveJob) await drainSaves();
+    while(saving) await new Promise(resolve=>setTimeout(resolve,50));
+    if(saveJob) throw new Error('Neon did not confirm the save.');
+    return true;
+  }
   async function createCompetition(event) {
     event.preventDefault();
     const name = $('competitionName').value.trim(), kind = $('competitionKind').value;
@@ -227,7 +234,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     window.BowlingApp.setState(state);queueSave(state);await drainSaves();
     $('sessionLabel').value='';notice(label+' was saved. The next session is ready with the roster preserved.');
   }
-  window.MonsterPortal = {persist:queueSave,startNew};
+  window.MonsterPortal = {persist:queueSave,startNew,flush:flushSaves};
 
   async function boot() {
     if (!cfg.url || !cfg.apiUrl) {

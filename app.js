@@ -434,8 +434,27 @@ function setup() {
     const value=e.target.type==='checkbox'?e.target.checked:(id.endsWith('PayoutMode')?e.target.value:num(e.target.value,NaN));
     const candidate={...state.config,[id]:value};
     if((e.target.type!=='checkbox'&&!e.target.value)||!configured(candidate)){status('Check the buy-ins and payout percentages. Keep enabled Doubles payouts at 100% or less.');if(e.target.type==='checkbox')e.target.checked=state.config[id];else e.target.value=state.config[id];return;}
-    state.config=candidate;persist();render();status('Configuration saved.');
+    state.config=candidate;render();
+    document.getElementById('configSaveState').textContent='Changes not saved yet.';
+    status('Configuration changed. Select Save payout configuration to keep it.');
   }));
+  document.getElementById('saveConfig').addEventListener('click',async()=>{
+    const candidate={...state.config};
+    for(const id of CONFIG_IDS) {
+      const el=document.getElementById(id);
+      candidate[id]=el.type==='checkbox'?el.checked:(id.endsWith('PayoutMode')?el.value:num(el.value,NaN));
+    }
+    const saveState=document.getElementById('configSaveState');
+    if(!configured(candidate)){saveState.textContent='Check the payout amounts and percentages.';status('Check the payout configuration.');return;}
+    state.config=candidate;persist();
+    saveState.textContent='Saving…';
+    try {
+      if(globalThis.MONSTER_PORTAL_MODE) await globalThis.MonsterPortal?.flush();
+      saveState.textContent='Saved to Neon.';status('Payout configuration saved.');
+    } catch(error) {
+      saveState.textContent='Could not save. '+(error.message||'Try again.');status('Payout configuration was not saved.');
+    }
+  });
   ['Hdcp','Scratch'].forEach(t=>document.getElementById('join'+t).addEventListener('change',toggleCounts));
   document.getElementById('bowlerForm').addEventListener('submit',e=>{
     e.preventDefault();
