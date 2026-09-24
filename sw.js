@@ -1,5 +1,5 @@
-const CACHE='brackets-20260924-full-spanish';
-const CORE=['/','/index.html','/app.js?v=20260924-full-spanish','/portal.js?v=20260924-full-spanish','/portal-config.js','/manifest.webmanifest','/assets/brackets-logo.png?v=20260922','/assets/app-icon.svg'];
+const CACHE='brackets-20260924-full-spanish-2';
+const CORE=['/','/index.html','/app.js?v=20260924-full-spanish-2','/portal.js?v=20260924-full-spanish-2','/portal-config.js','/manifest.webmanifest','/assets/brackets-logo.png?v=20260922','/assets/app-icon.svg'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;e.respondWith(fetch(e.request).then(r=>{const copy=r.clone();caches.open(CACHE).then(c=>c.put(e.request,copy));return r}).catch(()=>caches.match(e.request)))});

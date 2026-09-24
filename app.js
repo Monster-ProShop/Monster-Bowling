@@ -71,7 +71,7 @@ const ES = {
   'Backup was not saved. Competition data was kept.':'No se guardó la copia. Se conservaron los datos.',
   'Check the buy-ins and fixed payout amounts.':'Revise las inscripciones y las cantidades fijas de los premios.',
   'Doubles needs all three scores for every team bowler.':'Parejas necesita las tres puntuaciones de cada integrante.',
-  'Language / Idioma':'Idioma / Language','English':'Inglés','Log in':'Iniciar sesión','Log out':'Cerrar sesión',
+  'Language / Idioma':'Idioma / Language','Language':'Idioma','English':'Inglés','Log in':'Iniciar sesión','Log out':'Cerrar sesión',
   'Sign in':'Iniciar sesión','Select a league or tournament to view its results. The administrator can sign in to manage all competitions.':'Seleccione una liga o torneo para ver sus resultados. El administrador puede iniciar sesión para gestionar todas las competencias.',
   'Email':'Correo electrónico','Password':'Contraseña','League / tournament':'Liga / torneo','Choose a league or tournament':'Seleccione una liga o torneo',
   'Create an account':'Crear una cuenta','Register with email':'Registrarse con correo electrónico','Confirm the email we send you before signing in. No administrator approval is needed.':'Confirme el correo que le enviaremos antes de iniciar sesión. No necesita aprobación del administrador.',
@@ -141,6 +141,7 @@ function translateText(original) {
     .replace(/^Editing (.+)\. Changes save to Neon\.$/,'Editando $1. Los cambios se guardan en Neon.')
     .replace(/^Saved to Neon at (.+)$/,'Guardado en Neon a las $1')
     .replace(/^Save failed: (.+)\. Your edits remain on this screen\.$/,'Error al guardar: $1. Sus cambios permanecen en esta pantalla.')
+    .replace(/Session expired\. Sign in again\./g,'La sesión expiró. Inicie sesión nuevamente.')
     .replace(/^(.+) Use Log in to continue\.$/,'$1 Use Iniciar sesión para continuar.')
     .replace(/^(.+) was saved\. The next session is ready with the roster preserved\.$/,'Se guardó $1. La siguiente sesión está lista con la misma lista de jugadores.')
     .replace(/\bleague\b/g,'liga').replace(/\btournament\b/g,'torneo').replace(/\bopen\b/g,'abierta')
