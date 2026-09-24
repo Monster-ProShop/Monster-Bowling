@@ -127,6 +127,7 @@ const ES = {
   'Competitions':'Competencias','Users & access':'Usuarios y acceso','Change an account between User and Manager, then assign the leagues or tournaments that Manager can edit.':'Cambie una cuenta entre Usuario y Encargado y luego asigne las ligas o torneos que puede editar.',
   'SuperAdmin — Users & access':'SuperAdmin — Usuarios y acceso','Designate which registered users can manage a league or tournament, and choose exactly which competitions they can edit.':'Designe qué usuarios registrados pueden administrar una liga o torneo y elija exactamente qué competencias pueden editar.',
   'Find user by email':'Buscar usuario por correo','Start typing an email address':'Comience a escribir un correo electrónico','Search for and select a registered user.':'Busque y seleccione un usuario registrado.',
+  'Saving session…':'Guardando sesión…','Saving scores, payouts and backup…':'Guardando puntuaciones, premios y copia de seguridad…','Session saved. The next session is ready.':'Sesión guardada. La siguiente sesión está lista.','Manager access required.':'Se requiere acceso de encargado.','The latest competition changes could not be saved. Try again.':'No se pudieron guardar los cambios más recientes de la competencia. Inténtelo de nuevo.',
   'Account type':'Tipo de cuenta','User':'Usuario','Manager':'Encargado','Admin':'Administrador','Managed competitions':'Competencias administradas','All competitions':'Todas las competencias','Save access':'Guardar acceso','No users found.':'No se encontraron usuarios.','User access saved.':'Acceso del usuario guardado.'
 };
 const originalText=new WeakMap();
@@ -493,9 +494,9 @@ function validBackup(packageData) {
   return [...data.brackets.hdcp,...data.brackets.scratch].every(bracket=>Array.isArray(bracket)&&bracket.length===8&&bracket.every(id=>id===null||ids.has(id)))&&
     data.pairs.every(pair=>Array.isArray(pair)&&pair.length===2&&pair[0]!==pair[1]&&pair.every(id=>ids.has(id)));
 }
-async function downloadBackup() {
+async function downloadBackup(forceDownload=false) {
   const json=JSON.stringify(backupPackage(state),null,2),name='monster-bowling-backup-'+new Date().toISOString().slice(0,10)+'.json';
-  if(window.showSaveFilePicker) {
+  if(window.showSaveFilePicker&&!forceDownload) {
     const handle=await window.showSaveFilePicker({suggestedName:name,types:[{description:'JSON backup',accept:{'application/json':['.json']}}]});
     const writer=await handle.createWritable();await writer.write(json);await writer.close();
     return true;
@@ -617,7 +618,14 @@ function setup() {
     b.scores[e.target.dataset.game]=raw===''?null:Number(raw);persist();render();status('Score saved.');
   });
   document.getElementById('startNew').addEventListener('click',async()=>{
-    if(globalThis.MONSTER_PORTAL_MODE){ try{await globalThis.MonsterPortal?.startNew();}catch(error){status(error.message||'Could not save the session.');} return; }
+    if(globalThis.MONSTER_PORTAL_MODE){
+      const button=document.getElementById('startNew'),saveState=document.getElementById('sessionSaveState');
+      button.disabled=true;button.textContent='Saving session…';saveState.textContent='Saving scores, payouts and backup…';status('Saving session…');
+      try{await globalThis.MonsterPortal?.startNew();saveState.textContent='Session saved. The next session is ready.';}
+      catch(error){const message=error.message||'Could not save the session.';saveState.textContent=message;status(message);}
+      finally{button.disabled=false;button.textContent='Save session & start next';translateUI();}
+      return;
+    }
     let confirmedSave=false;
     try { confirmedSave=await downloadBackup(); }
     catch(e) { status('Backup was not saved. Competition data was kept.');return; }

@@ -154,6 +154,14 @@ async function handler(request) {
       !/^\d{4}-\d{2}-\d{2}$/.test(body.date)||!body.state||!body.results||!Array.isArray(body.personal))
       return response({error:'Invalid session data'},400);
     if(!await canManage(actor,body.competitionId))return response({error:'Manager access required'},403);
+    const existing=await pool.query(`select id from public.bowling_session_archives
+      where competition_id=$1 and lower(label)=lower($2) and session_date=$3 order by created_at desc limit 1`,
+      [body.competitionId,body.label.trim(),body.date]);
+    if(existing.rowCount) {
+      const {rows}=await pool.query(`update public.bowling_session_archives set state=$2,results=$3,personal=$4
+        where id=$1 returning id`,[existing.rows[0].id,body.state,body.results,JSON.stringify(body.personal)]);
+      return response({...rows[0],updated:true});
+    }
     const {rows}=await pool.query(`insert into public.bowling_session_archives
       (competition_id,label,session_date,state,results,personal) values ($1,$2,$3,$4,$5,$6) returning id`,
       [body.competitionId,body.label.trim(),body.date,body.state,body.results,JSON.stringify(body.personal)]);

@@ -300,17 +300,20 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     notice('User access saved.');await loadUsers();
   }
   async function startNew() {
-    if (!admin) return;
+    if (!admin) throw new Error('Manager access required.');
     const label=$('sessionLabel').value.trim(),date=$('sessionDate').value;
     if(!label||!date) throw new Error('Enter a session name and date before saving.');
+    // Trigger a normal JSON download while the button click still has browser
+    // permission. File picker APIs lose permission after the network awaits below.
+    await window.BowlingApp.exportBackup(true);
     await drainSaves();
+    if(saveJob)throw new Error('The latest competition changes could not be saved. Try again.');
     const state=window.BowlingApp.getState(),snapshot=window.BowlingApp.snapshot();
     await api('/sessions','POST',{competitionId:current.id,label,date,state,results:snapshot.publicData,personal:snapshot.personal});
-    await window.BowlingApp.exportBackup();
     state.bowlers=state.bowlers.map(b=>({...b,scores:{g1:null,g2:null,g3:null},paid:false}));
     state.brackets={hdcp:[],scratch:[]};state.generated=false;state.highGenerated=false;
     window.BowlingApp.setState(state);queueSave(state);await drainSaves();
-    $('sessionLabel').value='';notice(label+' was saved. The next session is ready with the roster preserved.');
+    $('sessionLabel').value='';notice(label+' was saved. The next session is ready with the roster preserved.');return {saved:true};
   }
   window.MonsterPortal = {persist:queueSave,startNew,flush:flushSaves,saveConfiguration,savePayment};
 
