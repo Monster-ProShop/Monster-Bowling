@@ -121,6 +121,27 @@ async function handler(request) {
     if(!rowCount) return response({error:'Competition state not found'},404);
     return response({saved:true});
   }
+  if (route === '/payment' && request.method === 'POST') {
+    if (!actor.admin) return response({ error: 'Administrator only' }, 403);
+    const body=await bodyJson(request);
+    if(typeof body.bowlerId!=='string'||!body.bowlerId||typeof body.paid!=='boolean')
+      return response({error:'Invalid payment status'},400);
+    const db=await pool.connect();
+    try {
+      await db.query('begin');
+      const updated=await db.query(`update public.bowling_competition_state set data=jsonb_set(data,'{bowlers}',
+        (select jsonb_agg(case when item->>'id'=$2 then jsonb_set(item,'{paid}',to_jsonb($3::boolean),true) else item end order by ordinality)
+         from jsonb_array_elements(data->'bowlers') with ordinality as entries(item,ordinality)),true),updated_at=now()
+        where competition_id=$1 returning data`,[id,body.bowlerId,body.paid]);
+      if(!updated.rowCount){await db.query('rollback');return response({error:'Competition state not found'},404);}
+      const bowler=(updated.rows[0].data.bowlers||[]).find(item=>item.id===body.bowlerId);
+      if(bowler?.email) await db.query(`update public.bowling_personal_results set data=data||jsonb_build_object(
+        'paid',$3::boolean,'outstanding',case when $3 then 0 else coalesce((data->>'due')::numeric,0) end,
+        'settlement',coalesce((data->>'won')::numeric,0)-case when $3 then 0 else coalesce((data->>'due')::numeric,0) end)
+        where competition_id=$1 and email=lower($2)`,[id,bowler.email,body.paid]);
+      await db.query('commit');return response({saved:true});
+    } catch(error){await db.query('rollback');throw error;} finally{db.release();}
+  }
   if (route === '/join' && request.method === 'POST') {
     const { rows } = await pool.query(`select 1 from public.bowling_competitions c
       join public.bowling_personal_results p on p.competition_id=c.id

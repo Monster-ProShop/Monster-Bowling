@@ -161,8 +161,9 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     if (personal) {
       const charges = personal.charges?.map(x => '<li>' + esc(x.label) + ': ' + dollars(x.amount) + '</li>').join('') || '<li>No charges</li>';
       const winnings = personal.winnings?.map(x => '<li>' + esc(x.description) + ': ' + dollars(x.amount) + '</li>').join('') || '<li>No winnings</li>';
-      const balanceClass = personal.net < 0 ? 'balance-negative' : personal.net > 0 ? 'balance-positive' : 'balance-zero';
-      finances = '<div class="card"><h2>Your balance — ' + esc(personal.name) + '</h2><h3>Entry charges</h3><ul>' + charges + '</ul><p>Total due: ' + dollars(personal.due) + '</p><h3>Winnings</h3><ul>' + winnings + '</ul><p>Total won: ' + dollars(personal.won) + '</p><p class="' + balanceClass + '">Balance: ' + dollars(personal.net) + '</p></div>';
+      const settlement=personal.settlement??(personal.won-(personal.paid?0:personal.due));
+      const balanceClass = settlement < 0 ? 'balance-negative' : settlement > 0 ? 'balance-positive' : 'balance-zero';
+      finances = '<div class="card"><h2>Your balance — ' + esc(personal.name) + '</h2><h3>Entry charges</h3><ul>' + charges + '</ul><p>Total due: ' + dollars(personal.due) + ' · Paid: '+(personal.paid?'Yes':'No')+'</p><h3>Winnings</h3><ul>' + winnings + '</ul><p>Total won: ' + dollars(personal.won) + '</p><p class="' + balanceClass + '">Settle now: ' + dollars(settlement) + '</p></div>';
     }
     const progress=(data.matchups||[]).map((round,i)=>'<div class="card"><h2>Game '+(i+1)+' matchups</h2>'+
       (round.length?'<ul class="matchup-list">'+round.map(x=>'<li><strong>'+esc(x.name)+' ('+x.opponents.length+')</strong>: '+x.opponents.map(esc).join(', ')+'</li>').join('')+'</ul>':'<p class="hint">Matchups will appear when the previous game is decided.</p>')+
@@ -219,6 +220,11 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     notice('Payout configuration saved to Neon.');
     return result;
   }
+  async function savePayment(bowlerId,paid) {
+    if(!current||!admin) throw new Error('Open a competition as administrator first.');
+    const result=await api('/payment?id='+encodeURIComponent(current.id),'POST',{bowlerId,paid});
+    notice('Payment status saved to Neon.');return result;
+  }
   async function createCompetition(event) {
     event.preventDefault();
     const name = $('competitionName').value.trim(), kind = $('competitionKind').value;
@@ -240,7 +246,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     window.BowlingApp.setState(state);queueSave(state);await drainSaves();
     $('sessionLabel').value='';notice(label+' was saved. The next session is ready with the roster preserved.');
   }
-  window.MonsterPortal = {persist:queueSave,startNew,flush:flushSaves,saveConfiguration};
+  window.MonsterPortal = {persist:queueSave,startNew,flush:flushSaves,saveConfiguration,savePayment};
 
   async function boot() {
     if (!cfg.url || !cfg.apiUrl) {
