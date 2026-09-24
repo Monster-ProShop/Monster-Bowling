@@ -1,4 +1,5 @@
 const KEY = 'monster-bowling-v2';
+const LANGUAGE_KEY = 'monster-bowling-language';
 const DEFAULT_CONFIG = {hdcpBuyin:10,hdcpFirstAmount:250,hdcpSecondAmount:100,scratchBuyin:10,scratchFirstAmount:250,scratchSecondAmount:100,highBuyin:20,highPayoutAmount:250,pairsBuyin:20,pairsGamePayoutAmount:250,pairsSeriesPayoutAmount:250,pairsHighEnabled:true,pairsSeriesEnabled:true};
 const CONFIG_IDS = Object.keys(DEFAULT_CONFIG);
 const MONEY_IDS = CONFIG_IDS.filter(id=>id.endsWith('Buyin')||id.endsWith('Amount'));
@@ -69,37 +70,115 @@ const ES = {
   'New competition started. Previous data is in your JSON backup.':'Nueva competencia iniciada. Los datos anteriores están en la copia JSON.',
   'Backup was not saved. Competition data was kept.':'No se guardó la copia. Se conservaron los datos.',
   'Check the buy-ins and fixed payout amounts.':'Revise las inscripciones y las cantidades fijas de los premios.',
-  'Doubles needs all three scores for every team bowler.':'Parejas necesita las tres puntuaciones de cada integrante.'
+  'Doubles needs all three scores for every team bowler.':'Parejas necesita las tres puntuaciones de cada integrante.',
+  'Language / Idioma':'Idioma / Language','English':'Inglés','Log in':'Iniciar sesión','Log out':'Cerrar sesión',
+  'Sign in':'Iniciar sesión','Select a league or tournament to view its results. The administrator can sign in to manage all competitions.':'Seleccione una liga o torneo para ver sus resultados. El administrador puede iniciar sesión para gestionar todas las competencias.',
+  'Email':'Correo electrónico','Password':'Contraseña','League / tournament':'Liga / torneo','Choose a league or tournament':'Seleccione una liga o torneo',
+  'Create an account':'Crear una cuenta','Register with email':'Registrarse con correo electrónico','Confirm the email we send you before signing in. No administrator approval is needed.':'Confirme el correo que le enviaremos antes de iniciar sesión. No necesita aprobación del administrador.',
+  'Register':'Registrarse','Verify your email':'Verifique su correo electrónico','Enter the code sent to your email.':'Ingrese el código enviado a su correo electrónico.',
+  'Verification code':'Código de verificación','Verify email':'Verificar correo','Send another code':'Enviar otro código',
+  'Leagues and tournaments':'Ligas y torneos','Manage leagues and tournaments':'Administrar ligas y torneos','Available leagues and tournaments':'Ligas y torneos disponibles',
+  'Install Brackets':'Instalar Brackets','Install this webapp on your phone for quick access to sessions and results.':'Instale esta aplicación web en su teléfono para acceder rápidamente a sesiones y resultados.','Install app':'Instalar aplicación',
+  'Competition name':'Nombre de la competencia','Type':'Tipo','League':'Liga','Tournament':'Torneo','Create competition':'Crear competencia','Back to dashboard':'Volver al panel',
+  'Manage current session':'Administrar sesión actual','View current session':'Ver sesión actual','Saved sessions':'Sesiones guardadas','View':'Ver','No saved sessions yet.':'Todavía no hay sesiones guardadas.','No competitions are available yet.':'Todavía no hay competencias disponibles.',
+  'Payout method: Fixed amount':'Método de premio: cantidad fija','1st place fixed ($)':'1.er lugar fijo ($)','2nd place fixed ($)':'2.º lugar fijo ($)','Winner fixed payout ($)':'Premio fijo al ganador ($)',
+  'Highest game plus handicap wins. Tied winners split the fixed payout equally.':'Gana el juego más alto con hándicap. Los ganadores empatados dividen el premio fijo por partes iguales.',
+  'High Game fixed team payout ($)':'Premio fijo por equipo para juego alto ($)','Series fixed team payout ($)':'Premio fijo por equipo para serie ($)',
+  "Each partner's handicap is included in every game. Fixed team payouts are split equally between both partners.":'El hándicap de cada integrante se incluye en cada juego. Los premios fijos del equipo se dividen por igual entre ambos.',
+  'Save payout configuration':'Guardar configuración de premios','Bowler login email':'Correo de acceso del jugador',
+  "Bracket numbers are the maximum each bowler is willing to play. Doubles charges depend on the teams added in the Doubles tab. Add the bowler's login email so they can see their personal balance.":'Los números de llaves son el máximo que cada jugador está dispuesto a jugar. Los cargos de Parejas dependen de los equipos agregados en esa pestaña. Agregue el correo de acceso del jugador para que pueda ver su saldo personal.',
+  'Paid':'Pagado','Outstanding':'Pendiente','Settle now':'Liquidar ahora','Payments received':'Pagos recibidos','Total to settle now':'Total por liquidar ahora',
+  'Event columns show what must be settled now. Paid bowlers receive their full winnings; unpaid entry charges are deducted. Red is owed and green is payable to the bowler.':'Las columnas muestran lo que debe liquidarse ahora. Los jugadores que pagaron reciben todos sus premios; a quienes no pagaron se les descuentan las inscripciones. Rojo indica deuda y verde indica pago al jugador.',
+  'Save this session':'Guardar esta sesión','Save the scores and payouts under this league, then begin the next bowling date with the same roster.':'Guarde las puntuaciones y premios en esta liga y luego inicie la siguiente fecha con la misma lista de jugadores.',
+  'Session name':'Nombre de la sesión','Session date':'Fecha de la sesión','Save session & start next':'Guardar sesión e iniciar la siguiente',
+  'Scores with handicap':'Puntuaciones con hándicap','Payout summary':'Resumen de premios','Results are pending.':'Los resultados están pendientes.',
+  'Your balance':'Su saldo','Select your bowler above and choose Show my balance.':'Seleccione su jugador arriba y elija Mostrar mi saldo.',
+  'Entry charges':'Cargos de inscripción','Winnings':'Premios','Current balance':'Saldo actual','Your bowler and notifications':'Su jugador y notificaciones',
+  'Choose your bowler to view the correct balance and only the brackets that include you. Notifications are optional.':'Seleccione su jugador para ver el saldo correcto y solamente las llaves en las que participa. Las notificaciones son opcionales.',
+  'Event date':'Fecha del evento','Show my balance':'Mostrar mi saldo','Enable notifications':'Activar notificaciones',
+  'Matchups will appear when the previous game is decided.':'Los enfrentamientos aparecerán cuando se decida el juego anterior.',
+  'This bowler is not entered in any handicap brackets.':'Este jugador no está inscrito en ninguna llave con hándicap.',
+  'This bowler is not entered in any scratch brackets.':'Este jugador no está inscrito en ninguna llave scratch.',
+  'No brackets generated.':'No se generaron llaves.','No charges':'Sin cargos','Competition':'Competencia','open':'abierta','league':'liga','tournament':'torneo',
+  'Results have not been published for this competition yet.':'Todavía no se han publicado resultados para esta competencia.',
+  'Total winnings':'Premios totales','Total won':'Total ganado','Paid:':'Pagado:','Outstanding:':'Pendiente:',
+  'Configuration changed. Select Save payout configuration to keep it.':'La configuración cambió. Seleccione Guardar configuración de premios para conservarla.',
+  'Changes not saved yet.':'Los cambios todavía no se han guardado.','Saving…':'Guardando…','Saved to Neon.':'Guardado en Neon.',
+  'Could not save.':'No se pudo guardar.','Try again.':'Inténtelo de nuevo.','Payout configuration saved.':'Configuración de premios guardada.',
+  'Payout configuration was not saved.':'No se guardó la configuración de premios.','Check the fixed payout amounts.':'Revise las cantidades fijas de los premios.',
+  'Check the payout configuration.':'Revise la configuración de premios.','Check the name, handicap and bracket counts.':'Revise el nombre, el hándicap y las cantidades de llaves.',
+  'A bowler with that name is already registered.':'Ya existe un jugador registrado con ese nombre.','That login email is already linked to another bowler.':'Ese correo de acceso ya está vinculado a otro jugador.',
+  'Saving payment status…':'Guardando estado de pago…','Payment status saved to Neon.':'Estado de pago guardado en Neon.',
+  'Bowler and their Doubles teams removed. Generate brackets again.':'Se eliminaron el jugador y sus parejas. Genere las llaves nuevamente.',
+  'Enter a whole game score from 0 to 300.':'Ingrese una puntuación entera entre 0 y 300.','Register bowlers first.':'Registre jugadores primero.',
+  'Select High Game during registration, then generate the standings.':'Seleccione Juego alto durante el registro y luego genere las posiciones.',
+  'Unknown':'Desconocido','Full winnings are now payable.':'Ahora corresponde pagar todos los premios.','Entry charges will be deducted from winnings.':'Los cargos de inscripción se descontarán de los premios.',
+  'Notifications are not available on this device yet.':'Las notificaciones todavía no están disponibles en este dispositivo.','Notification permission was not granted.':'No se concedió permiso para las notificaciones.',
+  'Verify your email before signing in.':'Verifique su correo electrónico antes de iniciar sesión.','Signed in again. Your competition information was preserved.':'Sesión iniciada nuevamente. Se conservó la información de la competencia.',
+  'Check your email for a verification code, then enter it below.':'Revise su correo para obtener el código de verificación e ingréselo abajo.','Email confirmed. You can now sign in.':'Correo confirmado. Ya puede iniciar sesión.',
+  'A new verification code has been sent.':'Se envió un nuevo código de verificación.','You are logged out.':'Su sesión se cerró.','Log in to continue.':'Inicie sesión para continuar.',
+  'Payout configuration saved to Neon.':'Configuración de premios guardada en Neon.','Site setup is incomplete. The Neon project URL must be configured.':'La configuración del sitio está incompleta. Debe configurarse la dirección del proyecto Neon.',
+  'Competition is not available.':'La competencia no está disponible.','Enter a session name and date before saving.':'Ingrese un nombre y una fecha para la sesión antes de guardarla.',
+  'Neon did not confirm the save.':'Neon no confirmó el guardado.','Open a competition as administrator first.':'Abra primero una competencia como administrador.',
+  'Request failed':'La solicitud falló','Session expired':'La sesión expiró','Session expired.':'La sesión expiró.','Session expired. Sign in again.':'La sesión expiró. Inicie sesión nuevamente.',
+  'Your session expired. Log in again to continue; the information on this screen is preserved.':'Su sesión expiró. Inicie sesión nuevamente para continuar; la información de esta pantalla se conservó.',
+  'Session expired. Use Log in to continue.':'La sesión expiró. Use Iniciar sesión para continuar.'
 };
 const originalText=new WeakMap();
+const originalAttributes=new WeakMap();
+function translateText(original) {
+  if(state.language!=='es') return original;
+  const trimmed=original.trim();
+  let translated=ES[trimmed];
+  if(!translated) translated=trimmed
+    .replace(/^Game (\d+) matchups$/,'Enfrentamientos del juego $1')
+    .replace(/^Standings after game (\d+)$/,'Posiciones después del juego $1')
+    .replace(/^Your balance — /,'Su saldo — ')
+    .replace(/^Total charges: /,'Cargos totales: ').replace(/ · Paid: /,' · Pagado: ').replace(/ · Outstanding: /,' · Pendiente: ')
+    .replace(/^Total won: /,'Total ganado: ').replace(/^Current balance: /,'Saldo actual: ')
+    .replace(/^Balance linked to (.+)\. Notifications remain off\.$/,'Saldo vinculado a $1. Las notificaciones permanecen desactivadas.')
+    .replace(/^Notifications enabled for (.+) on (.+)\.$/,'Notificaciones activadas para $1 el $2.')
+    .replace(/^Editing (.+)\. Changes save to Neon\.$/,'Editando $1. Los cambios se guardan en Neon.')
+    .replace(/^Saved to Neon at (.+)$/,'Guardado en Neon a las $1')
+    .replace(/^Save failed: (.+)\. Your edits remain on this screen\.$/,'Error al guardar: $1. Sus cambios permanecen en esta pantalla.')
+    .replace(/^(.+) Use Log in to continue\.$/,'$1 Use Iniciar sesión para continuar.')
+    .replace(/^(.+) was saved\. The next session is ready with the roster preserved\.$/,'Se guardó $1. La siguiente sesión está lista con la misma lista de jugadores.')
+    .replace(/\bleague\b/g,'liga').replace(/\btournament\b/g,'torneo').replace(/\bopen\b/g,'abierta')
+    .replace(/\bYes\b/g,'Sí').replace(/\bNo\b/g,'No')
+    .replace(/^(.+) marked paid\. Full winnings are now payable\.$/,'$1 marcado como pagado. Ahora corresponde pagar todos los premios.')
+    .replace(/^(.+) marked unpaid\. Entry charges will be deducted from winnings\.$/,'$1 marcado como no pagado. Los cargos de inscripción se descontarán de los premios.')
+    .replace(/^Remove (.+) and their Doubles teams\?$/,'¿Eliminar a $1 y sus equipos de Parejas?')
+    .replace(/^(\d+) brackets? generated\.$/,'Se generaron $1 llaves.')
+    .replace(/^Team #(\d+)/,'Equipo n.º $1').replace(/^Pair #(\d+)/,'Pareja n.º $1')
+    .replace(/Doubles high game/g,'Juego alto de Parejas').replace(/Doubles series/g,'Serie de Parejas')
+    .replace(/Doubles team(s)?/g,(_,plural)=>plural?'equipos de Parejas':'equipo de Parejas')
+    .replace(/Handicap bracket(s)?/g,(_,plural)=>plural?'llaves con hándicap':'llave con hándicap')
+    .replace(/Scratch bracket(s)?/g,(_,plural)=>plural?'llaves scratch':'llave scratch')
+    .replace(/HDCP High Game Pot/g,'Pozo de juego alto con hándicap')
+    .replace(/Registered for Doubles but not on a team, so not charged:/g,'Registrados para Parejas pero sin equipo, por lo que no pagan:')
+    .replace(/Unused bracket willingness is not charged:/g,'Los lugares no usados en las llaves no se cobran:')
+    .replace(/Willingness above the available full brackets:/g,'Lugares ofrecidos por encima de las llaves disponibles:')
+    .replace(/Best combined game:/g,'Mejor juego combinado:').replace(/Winning game:/g,'Juego ganador:').replace(/Payout:/g,'Premio:')
+    .replace(/Balances may change when pending results are entered\./g,'Los saldos pueden cambiar cuando se ingresen los resultados pendientes.')
+    .replace(/No winnings/g,'Sin premios').replace(/No entries/g,'Sin inscripciones');
+  return original.replace(trimmed,translated);
+}
 function translateUI() {
   if(typeof document==='undefined') return;
   const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
   while(walker.nextNode()) {
-    const node=walker.currentNode;if(['SCRIPT','STYLE','OPTION'].includes(node.parentElement?.tagName))continue;
+    const node=walker.currentNode;if(['SCRIPT','STYLE'].includes(node.parentElement?.tagName))continue;
     if(!originalText.has(node)) originalText.set(node,node.nodeValue);
-    const original=originalText.get(node),trimmed=original.trim();
-    let translated=state.language==='es'?(ES[trimmed]||original):original;
-    if(state.language==='es'&&translated===original) {
-      translated=original.replace(/Team #(\d+)/g,'Equipo n.º $1').replace(/Pair #(\d+)/g,'Pareja n.º $1')
-        .replace(/Doubles high game/g,'Juego alto de Parejas').replace(/Doubles series/g,'Serie de Parejas')
-        .replace(/Doubles team(s)?/g,(_,plural)=>plural?'equipos de Parejas':'equipo de Parejas')
-        .replace(/Handicap bracket(s)?/g,(_,plural)=>plural?'llaves con hándicap':'llave con hándicap')
-        .replace(/Scratch bracket(s)?/g,(_,plural)=>plural?'llaves scratch':'llave scratch')
-        .replace(/HDCP High Game Pot/g,'Pozo de juego alto con hándicap')
-        .replace(/Registered for Doubles but not on a team, so not charged:/g,'Registrados para Parejas pero sin equipo, por lo que no pagan:')
-        .replace(/Unused bracket willingness is not charged:/g,'Los lugares no usados en las llaves no se cobran:')
-        .replace(/Willingness above the available full brackets:/g,'Lugares ofrecidos por encima de las llaves disponibles:')
-        .replace(/Best combined game:/g,'Mejor juego combinado:')
-        .replace(/Winning game:/g,'Juego ganador:').replace(/Payout:/g,'Premio:')
-        .replace(/Balances may change when pending results are entered\./g,'Los saldos pueden cambiar cuando se ingresen los resultados pendientes.')
-        .replace(/No winnings/g,'Sin premios').replace(/No entries/g,'Sin inscripciones');
-    }
-    node.nodeValue=translated===original?original:original.replace(trimmed,translated);
+    const original=originalText.get(node);node.nodeValue=translateText(original);
   }
+  document.querySelectorAll('[placeholder],[title],[aria-label]').forEach(element=>{
+    if(!originalAttributes.has(element)) originalAttributes.set(element,Object.fromEntries(['placeholder','title','aria-label'].filter(name=>element.hasAttribute(name)).map(name=>[name,element.getAttribute(name)])));
+    for(const [name,value] of Object.entries(originalAttributes.get(element))) element.setAttribute(name,translateText(value));
+  });
   document.documentElement.lang=state.language;
 }
-function fresh() { return {config:{...DEFAULT_CONFIG},bowlers:[],brackets:{hdcp:[],scratch:[]},generated:false,highGenerated:false,pairs:[],pairsGenerated:false,language:'en'}; }
+function preferredLanguage() { try{return localStorage.getItem(LANGUAGE_KEY)==='es'?'es':'en';}catch{return 'en';} }
+function fresh() { return {config:{...DEFAULT_CONFIG},bowlers:[],brackets:{hdcp:[],scratch:[]},generated:false,highGenerated:false,pairs:[],pairsGenerated:false,language:preferredLanguage()}; }
 function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY));
@@ -421,7 +500,7 @@ async function downloadBackup() {
   return false;
 }
 function setup() {
-  document.getElementById('language').addEventListener('change',e=>{state.language=e.target.value==='es'?'es':'en';persist();render();});
+  document.getElementById('language').addEventListener('change',e=>{state.language=e.target.value==='es'?'es':'en';try{localStorage.setItem(LANGUAGE_KEY,state.language);}catch{}persist();render();});
   document.querySelectorAll('[data-tab]').forEach(btn=>btn.addEventListener('click',()=>{
     document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===btn));
     document.querySelectorAll('.panel').forEach(x=>x.classList.toggle('active',x.id===btn.dataset.tab));render();
@@ -570,7 +649,7 @@ if(typeof window!=='undefined') window.BowlingApp={
   fresh,
   setState(data){
     if(!data||!Array.isArray(data.bowlers)||!data.config) throw new Error('Invalid competition data');
-    state={...fresh(),...data,config:{...DEFAULT_CONFIG,...data.config}};
+    const language=state.language;state={...fresh(),...data,language,config:{...DEFAULT_CONFIG,...data.config}};
     resetForm();render();
   },
   getState(){return structuredClone(state);},
@@ -594,7 +673,10 @@ if(typeof window!=='undefined') window.BowlingApp={
       data:report.rows.find(r=>r.id===b.id)
     }));
     return {publicData,personal};
-  }
+  },
+  translateUI,
+  translateText,
+  language:()=>state.language
 };
 if(typeof document!=='undefined') setup();
 if(typeof module!=='undefined') module.exports={fresh,buildBrackets,addTeamByNames,pairCount,bracketGraphic,calculate,reportSummary,backupPackage,validBackup,rankAwards,configured,complete,assignedCount};

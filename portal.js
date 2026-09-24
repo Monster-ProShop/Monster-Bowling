@@ -7,12 +7,14 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
   const dollars = cents => '$' + (Number(cents || 0) / 100).toFixed(2);
   const sections = ['portalAuth','portalDashboard','portalViewer','managerApp'];
   const show = id => sections.forEach(name => $(name).classList.toggle('hidden', name !== id));
-  const notice = message => { $('portalNotice').textContent = message; };
+  const localize = () => window.BowlingApp?.translateUI();
+  const notice = message => { $('portalNotice').textContent = message;localize(); };
   const fail = error => notice(error?.message || String(error));
   let client, user, admin = false, current = null, saveJob = null, saving = false, verificationEmail = '', reauth = false, sessionExpired = false, needsSessionReset = false, lastEmail = '';
   const updateAuthButton = () => {
     $('portalLogin').textContent = user && !sessionExpired ? 'Log out' : 'Log in';
     $('portalLogin').classList.remove('hidden');
+    localize();
   };
   const newClient = () => createClient(cfg.url,{auth:{persistSession:true,autoRefreshToken:true,fetchOptions:{credentials:'include',cache:'no-store'}}});
   async function resetExpiredSession() {
@@ -70,6 +72,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     select.innerHTML = '<option value="">Choose a league or tournament</option>' +
       rows.map(c => '<option value="' + esc(c.id) + '">' + esc(c.name) + ' (' + esc(c.kind) + ')</option>').join('');
     if (selected) select.value = selected;
+    localize();
   }
   async function listCompetitions() {
     return await api('/competitions');
@@ -89,6 +92,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       '</div></article>'
     ).join('') || '<p>No competitions are available yet.</p>';
     show('portalDashboard');
+    localize();
   }
   async function identify(signedInUser, selected) {
     user = signedInUser || null;
@@ -143,6 +147,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
   function renderViewer(data, personal, context={}) {
     if (!data?.bowlers) {
       $('viewerContent').innerHTML = '<p>Results have not been published for this competition yet.</p>';
+      localize();
       return;
     }
     const people = Object.fromEntries(data.bowlers.map(b => [b.id,b]));
@@ -183,15 +188,15 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       ((data.standings?.[i]||[]).length?'<h3>Standings after game '+(i+1)+'</h3><ol>'+data.standings[i].map(x=>'<li>'+esc(x.name)+' — '+esc(x.score)+'</li>').join('')+'</ol>':'')+'</div>').join('');
     const notify='<div class="card no-print"><h2>Your bowler and notifications</h2><p>Choose your bowler to view the correct balance and only the brackets that include you. Notifications are optional.</p><div class="form-grid"><label>Bowler<select id="notifyBowler">'+data.bowlers.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(b=>'<option value="'+esc(b.id)+'"'+(b.id===personal?.id?' selected':'')+'>'+esc(b.name)+'</option>').join('')+'</select></label><label>Event date<input id="notifyDate" type="date" value="'+esc(context.date||new Date().toLocaleDateString('en-CA'))+'"></label></div><div class="actions"><button id="showBalance" type="button">Show my balance</button><button id="enableNotifications" class="secondary" type="button">Enable notifications</button></div><p id="notifyStatus" class="hint"></p></div>';
     $('viewerContent').innerHTML = notify + finances + progress + scoreboard + '<div id="userBrackets">'+bracketCards(personal?.id)+'</div>' + pairs + awards;
-    const filterBrackets=bowlerId=>{$('userBrackets').innerHTML=bracketCards(bowlerId);};
+    const filterBrackets=bowlerId=>{$('userBrackets').innerHTML=bracketCards(bowlerId);localize();};
     $('notifyBowler')?.addEventListener('change',()=>filterBrackets($('notifyBowler').value));
     $('showBalance')?.addEventListener('click',async()=>{
       try {
         const linked=await api('/balance','POST',{competitionId:current?.id,bowlerId:$('notifyBowler').value,sessionId:context.sessionId});
         $('balanceCard').outerHTML=financeCard(linked.personal);
         filterBrackets(linked.personal?.id||$('notifyBowler').value);
-        $('notifyStatus').textContent='Balance linked to '+$('notifyBowler').selectedOptions[0].textContent+'. Notifications remain off.';
-      } catch(error){$('notifyStatus').textContent=error.message;}
+        $('notifyStatus').textContent='Balance linked to '+$('notifyBowler').selectedOptions[0].textContent+'. Notifications remain off.';localize();
+      } catch(error){$('notifyStatus').textContent=error.message;localize();}
     });
     $('enableNotifications')?.addEventListener('click',async()=>{
       try {
@@ -203,8 +208,10 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
         const linked=await api('/notifications','POST',{competitionId:current?.id,bowlerId:$('notifyBowler').value,eventDate:$('notifyDate').value,sessionId:context.sessionId,subscription});
         $('notifyStatus').textContent='Notifications enabled for '+$('notifyBowler').selectedOptions[0].textContent+' on '+$('notifyDate').value+'.';
         if(linked.personal){$('balanceCard').outerHTML=financeCard(linked.personal);filterBrackets(linked.personal.id);}
-      } catch(error){$('notifyStatus').textContent=error.message;}
+        localize();
+      } catch(error){$('notifyStatus').textContent=error.message;localize();}
     });
+    localize();
   }
   async function openSavedSession(id) {
     const result=await api('/session?id='+encodeURIComponent(id));
