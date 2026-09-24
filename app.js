@@ -122,7 +122,9 @@ const ES = {
   'Neon did not confirm the save.':'Neon no confirmó el guardado.','Open a competition as administrator first.':'Abra primero una competencia como administrador.',
   'Request failed':'La solicitud falló','Session expired':'La sesión expiró','Session expired.':'La sesión expiró.','Session expired. Sign in again.':'La sesión expiró. Inicie sesión nuevamente.',
   'Your session expired. Log in again to continue; the information on this screen is preserved.':'Su sesión expiró. Inicie sesión nuevamente para continuar; la información de esta pantalla se conservó.',
-  'Session expired. Use Log in to continue.':'La sesión expiró. Use Iniciar sesión para continuar.'
+  'Session expired. Use Log in to continue.':'La sesión expiró. Use Iniciar sesión para continuar.',
+  'Competitions':'Competencias','Users & access':'Usuarios y acceso','Change an account between User and Manager, then assign the leagues or tournaments that Manager can edit.':'Cambie una cuenta entre Usuario y Encargado y luego asigne las ligas o torneos que puede editar.',
+  'Account type':'Tipo de cuenta','User':'Usuario','Manager':'Encargado','Admin':'Administrador','Managed competitions':'Competencias administradas','All competitions':'Todas las competencias','Save access':'Guardar acceso','No users found.':'No se encontraron usuarios.','User access saved.':'Acceso del usuario guardado.'
 };
 const originalText=new WeakMap();
 const originalAttributes=new WeakMap();

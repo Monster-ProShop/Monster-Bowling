@@ -10,7 +10,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
   const localize = () => window.BowlingApp?.translateUI();
   const notice = message => { $('portalNotice').textContent = message;localize(); };
   const fail = error => notice(error?.message || String(error));
-  let client, user, admin = false, current = null, saveJob = null, saving = false, verificationEmail = '', reauth = false, sessionExpired = false, needsSessionReset = false, lastEmail = '';
+  let client, user, role = 'user', admin = false, superAdmin = false, current = null, competitions = [], saveJob = null, saving = false, verificationEmail = '', reauth = false, sessionExpired = false, needsSessionReset = false, lastEmail = '';
   const updateAuthButton = () => {
     $('portalLogin').textContent = user && !sessionExpired ? 'Log out' : 'Log in';
     $('portalLogin').classList.remove('hidden');
@@ -79,19 +79,33 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
   }
   async function refreshDashboard() {
     const rows = await listCompetitions();
+    competitions=rows;
     renderCompetitionOptions(rows.filter(c => c.status === 'open'), $('loginCompetition').value);
     $('dashboardHeading').textContent = admin ? 'Manage leagues and tournaments' : 'Available leagues and tournaments';
-    $('createCompetition').classList.toggle('hidden', !admin);
+    $('createCompetition').classList.toggle('hidden', !superAdmin);
+    $('dashboardTabs').classList.toggle('hidden',!superAdmin);
+    $('usersAccess').classList.add('hidden');$('dashboardCompetitions').classList.remove('hidden');
     $('accountEmail').textContent = user.email;
     const sessions=await Promise.all(rows.map(c=>api('/sessions?competition_id='+encodeURIComponent(c.id))));
     $('competitionCards').innerHTML = rows.map((c,i) =>
       '<article class="card competition-card"><h3>' + esc(c.name) + '</h3><p>' + esc(c.kind) +
       ' · ' + esc(c.status) + '</p><button data-open="' + esc(c.id) + '">' +
-      (admin ? 'Manage current session' : 'View current session') + '</button><div class="session-list"><strong>Saved sessions</strong>'+
+      (c.can_manage ? 'Manage current session' : 'View current session') + '</button><div class="session-list"><strong>Saved sessions</strong>'+
       (sessions[i].length?sessions[i].map(x=>'<div class="session-row"><span>'+esc(x.label)+'<br><small>'+esc(String(x.session_date).slice(0,10))+'</small></span><button class="secondary" data-session="'+esc(x.id)+'">View</button></div>').join(''):'<p class="hint">No saved sessions yet.</p>')+
       '</div></article>'
     ).join('') || '<p>No competitions are available yet.</p>';
     show('portalDashboard');
+    localize();
+  }
+  async function loadUsers() {
+    if(!superAdmin)return;
+    const users=await api('/users');
+    $('userAccessRows').innerHTML=users.map(account=>{
+      const isOwner=account.role==='superadmin',assigned=new Set(account.competition_ids||[]);
+      const options=isOwner?'<option>Admin</option>':'<option value="user"'+(account.role==='user'?' selected':'')+'>User</option><option value="manager"'+(account.role==='manager'?' selected':'')+'>Manager</option>';
+      const leagues=isOwner?'<span class="hint">All competitions</span>':competitions.map(c=>'<label><input type="checkbox" data-assignment="'+esc(c.id)+'" '+(assigned.has(c.id)?'checked':'')+(account.role==='manager'?'':' disabled')+'> '+esc(c.name)+'</label>').join('');
+      return '<div class="access-user card" data-user="'+esc(account.id)+'"><strong class="access-email">'+esc(account.email)+'</strong><label>Account type<select data-user-role '+(isOwner?'disabled':'')+'>'+options+'</select></label><div><strong>Managed competitions</strong><div class="league-checks">'+leagues+'</div></div>'+(isOwner?'':'<button type="button" data-save-access>Save access</button>')+'</div>';
+    }).join('')||'<p>No users found.</p>';
     localize();
   }
   async function identify(signedInUser, selected) {
@@ -103,7 +117,8 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       user = null;
       notice('Verify your email before signing in.');
     }
-    admin = !!(user && user.email?.toLowerCase() === 'monsterproshop@outlook.com' && user.emailVerified);
+    if(user){const account=await api('/me');role=account.role||'user';}else role='user';
+    superAdmin=role==='superadmin';admin=superAdmin||role==='manager';
     sessionExpired = false;
     if (user?.email) lastEmail = user.email;
     updateAuthButton();
@@ -116,7 +131,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     notice('');
     if (reauth && current) {
       reauth = false;
-      if (admin) {
+      if (admin&&current?.can_manage) {
         show('managerApp');
         notice('Signed in again. Your competition information was preserved.');
         if (saveJob && !saving) void drainSaves();
@@ -133,7 +148,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     current = competition;
     $('currentCompetition').textContent = competition.name;
     $('viewerCompetition').textContent = competition.name;
-    if (admin) {
+    if (competition.can_manage) {
       const state = await api('/state?id=' + encodeURIComponent(id));
       window.BowlingApp.setState(state?.bowlers ? state : window.BowlingApp.fresh());
       show('managerApp');
@@ -264,6 +279,13 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     $('createCompetition').reset();
     await openCompetition(data.id);
   }
+  async function saveUserAccess(container) {
+    const userId=container.dataset.user,select=container.querySelector('[data-user-role]'),newRole=select.value;
+    await api('/users/role','POST',{userId,role:newRole});
+    const competitionIds=newRole==='manager'?[...container.querySelectorAll('[data-assignment]:checked')].map(input=>input.dataset.assignment):[];
+    await api('/users/assignments','POST',{userId,competitionIds});
+    notice('User access saved.');await loadUsers();
+  }
   async function startNew() {
     if (!admin) return;
     const label=$('sessionLabel').value.trim(),date=$('sessionDate').value;
@@ -344,7 +366,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     $('portalLogin').addEventListener('click',async () => {
       if (user && !sessionExpired) {
         await client.auth.signOut();
-        user = null; admin = false; current = null; reauth = false; sessionExpired = false;
+        user = null; role='user';admin = false;superAdmin=false; current = null; reauth = false; sessionExpired = false;
         updateAuthButton();
         await identify(null);
         notice('You are logged out.');
@@ -353,7 +375,9 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       const email = user?.email || lastEmail;
       reauth = !!current;
       user = null;
+      role='user';
       admin = false;
+      superAdmin=false;
       sessionExpired = false;
       updateAuthButton();
       $('loginEmail').value = email;
@@ -369,6 +393,17 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       const session = event.target.closest('[data-session]');
       if (session) void openSavedSession(session.dataset.session).catch(fail);
     });
+    $('dashboardTabs').addEventListener('click',event=>{
+      const tab=event.target.closest('[data-dashboard-tab]');if(!tab)return;
+      const users=tab.dataset.dashboardTab==='users';$('dashboardCompetitions').classList.toggle('hidden',users);$('usersAccess').classList.toggle('hidden',!users);
+      [...$('dashboardTabs').querySelectorAll('button')].forEach(button=>button.classList.toggle('secondary',button!==tab));
+      if(users)void loadUsers().catch(fail);localize();
+    });
+    $('userAccessRows').addEventListener('change',event=>{
+      const select=event.target.closest('[data-user-role]');if(!select)return;
+      select.closest('[data-user]').querySelectorAll('[data-assignment]').forEach(input=>input.disabled=select.value!=='manager');
+    });
+    $('userAccessRows').addEventListener('click',event=>{const button=event.target.closest('[data-save-access]');if(button)void saveUserAccess(button.closest('[data-user]')).catch(fail);});
     $('createCompetition').addEventListener('submit',event => void createCompetition(event).catch(fail));
     const {data,error} = await client.auth.getSession();
     if (error) throw error;
@@ -377,8 +412,8 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
   boot().catch(error => {
     // Session restoration can fail before an API request is made. Always recover
     // to a usable login screen without replacing the in-memory competition.
-    user = null;
-    admin = false;
+    user = null;role='user';
+    admin = false;superAdmin=false;
     sessionExpired = true;
     needsSessionReset = true;
     show('portalAuth');

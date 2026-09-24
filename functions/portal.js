@@ -25,11 +25,18 @@ async function identity(request) {
     issuer: [authUrl, new URL(authUrl).origin]
   });
   if (payload.role !== 'authenticated' || !uuid.test(String(payload.sub))) return null;
-  const result = await pool.query('select email,"emailVerified" from neon_auth."user" where id=$1', [payload.sub]);
+  const result = await pool.query(`select u.email,u."emailVerified",coalesce(r.role,'user') role
+    from neon_auth."user" u left join public.bowling_user_roles r on r.user_id=u.id where u.id=$1`, [payload.sub]);
   const record = result.rows[0];
   if (!record?.emailVerified) return null;
-  return { id: payload.sub, email: record.email.toLowerCase(),
-    admin: record.email.toLowerCase() === 'monsterproshop@outlook.com' };
+  const email=record.email.toLowerCase(),role=email==='monsterproshop@outlook.com'?'superadmin':record.role;
+  return { id: payload.sub, email, role, admin:role==='superadmin' };
+}
+async function canManage(actor,competitionId) {
+  if(actor.role==='superadmin')return true;
+  if(actor.role!=='manager')return false;
+  const result=await pool.query('select 1 from public.bowling_manager_assignments where user_id=$1 and competition_id=$2',[actor.id,competitionId]);
+  return !!result.rowCount;
 }
 async function bodyJson(request) {
   const raw = await request.text();
@@ -63,15 +70,54 @@ async function handler(request) {
   let actor = null;
   try { actor = await identity(request); }
   catch { return response({ error: 'Invalid or expired session' }, 401); }
+  if(route==='/me'&&request.method==='GET') {
+    if(!actor)return response({error:'Sign in first'},401);
+    return response({email:actor.email,role:actor.role});
+  }
   if (route === '/competitions' && request.method === 'GET') {
-    const { rows } = await pool.query(actor?.admin
-      ? 'select id,name,kind,status,created_at from public.bowling_competitions order by created_at desc'
-      : "select id,name,kind,status,created_at from public.bowling_competitions where status='open' order by created_at desc");
+    const { rows } = await pool.query(actor?.role==='superadmin'
+      ? 'select id,name,kind,status,created_at,true can_manage from public.bowling_competitions order by created_at desc'
+      : actor?.role==='manager'
+        ? `select c.id,c.name,c.kind,c.status,c.created_at,(a.user_id is not null) can_manage from public.bowling_competitions c
+           left join public.bowling_manager_assignments a on a.competition_id=c.id and a.user_id=$1
+           where c.status='open' order by c.created_at desc`
+        : "select id,name,kind,status,created_at,false can_manage from public.bowling_competitions where status='open' order by created_at desc",
+      actor?.role==='manager'?[actor.id]:[]);
     return response(rows);
   }
   if (!actor) return response({ error: 'Sign in and verify your email first' }, 401);
+  if(route==='/users'&&request.method==='GET') {
+    if(actor.role!=='superadmin')return response({error:'SuperAdmin only'},403);
+    const {rows}=await pool.query(`select u.id,lower(u.email) email,
+      case when lower(u.email)='monsterproshop@outlook.com' then 'superadmin' else coalesce(r.role,'user') end role,
+      coalesce(jsonb_agg(a.competition_id) filter(where a.competition_id is not null),'[]'::jsonb) competition_ids
+      from neon_auth."user" u left join public.bowling_user_roles r on r.user_id=u.id
+      left join public.bowling_manager_assignments a on a.user_id=u.id
+      group by u.id,u.email,r.role order by lower(u.email)`);
+    return response(rows);
+  }
+  if(route==='/users/role'&&request.method==='POST') {
+    if(actor.role!=='superadmin')return response({error:'SuperAdmin only'},403);
+    const body=await bodyJson(request);
+    if(!uuid.test(String(body.userId))||!['user','manager'].includes(body.role))return response({error:'Invalid account type'},400);
+    const target=await pool.query('select lower(email) email from neon_auth."user" where id=$1',[body.userId]);
+    if(!target.rowCount)return response({error:'User not found'},404);
+    if(target.rows[0].email==='monsterproshop@outlook.com')return response({error:'The SuperAdmin account cannot be changed'},400);
+    await pool.query(`insert into public.bowling_user_roles(user_id,role) values($1,$2)
+      on conflict(user_id) do update set role=excluded.role,updated_at=now()`,[body.userId,body.role]);
+    if(body.role==='user')await pool.query('delete from public.bowling_manager_assignments where user_id=$1',[body.userId]);
+    return response({saved:true});
+  }
+  if(route==='/users/assignments'&&request.method==='POST') {
+    if(actor.role!=='superadmin')return response({error:'SuperAdmin only'},403);
+    const body=await bodyJson(request),ids=Array.isArray(body.competitionIds)?body.competitionIds:[];
+    if(!uuid.test(String(body.userId))||ids.some(id=>!uuid.test(String(id))))return response({error:'Invalid manager assignments'},400);
+    const db=await pool.connect();try{await db.query('begin');await db.query('delete from public.bowling_manager_assignments where user_id=$1',[body.userId]);
+      for(const competitionId of ids)await db.query('insert into public.bowling_manager_assignments(user_id,competition_id) values($1,$2)',[body.userId,competitionId]);
+      await db.query('commit');return response({saved:true});}catch(error){await db.query('rollback');throw error;}finally{db.release();}
+  }
   if (route === '/competitions' && request.method === 'POST') {
-    if (!actor.admin) return response({ error: 'Administrator only' }, 403);
+    if (actor.role!=='superadmin') return response({ error: 'SuperAdmin only' }, 403);
     const body = await bodyJson(request);
     if (typeof body.name !== 'string' || !body.name.trim() || body.name.length > 120 || !['league','tournament'].includes(body.kind))
       return response({ error: 'Invalid competition' }, 400);
@@ -103,11 +149,11 @@ async function handler(request) {
       date:rows[0].session_date,results:rows[0].results,personal});
   }
   if (route === '/sessions' && request.method === 'POST') {
-    if (!actor.admin) return response({ error: 'Administrator only' }, 403);
     const body=await bodyJson(request);
     if(!uuid.test(String(body.competitionId))||typeof body.label!=='string'||!body.label.trim()||body.label.length>120||
       !/^\d{4}-\d{2}-\d{2}$/.test(body.date)||!body.state||!body.results||!Array.isArray(body.personal))
       return response({error:'Invalid session data'},400);
+    if(!await canManage(actor,body.competitionId))return response({error:'Manager access required'},403);
     const {rows}=await pool.query(`insert into public.bowling_session_archives
       (competition_id,label,session_date,state,results,personal) values ($1,$2,$3,$4,$5,$6) returning id`,
       [body.competitionId,body.label.trim(),body.date,body.state,body.results,JSON.stringify(body.personal)]);
@@ -159,12 +205,12 @@ async function handler(request) {
   const id = url.searchParams.get('id');
   if (!uuid.test(String(id))) return response({ error: 'Invalid competition ID' }, 400);
   if (route === '/state' && request.method === 'GET') {
-    if (!actor.admin) return response({ error: 'Administrator only' }, 403);
+    if (!await canManage(actor,id)) return response({ error: 'Manager access required' }, 403);
     const { rows } = await pool.query('select data from public.bowling_competition_state where competition_id=$1',[id]);
     return response(rows[0]?.data || null);
   }
   if (route === '/config' && request.method === 'POST') {
-    if (!actor.admin) return response({ error: 'Administrator only' }, 403);
+    if (!await canManage(actor,id)) return response({ error: 'Manager access required' }, 403);
     const body=await bodyJson(request);
     if(!body.config||typeof body.config!=='object'||Array.isArray(body.config))
       return response({error:'Invalid payout configuration'},400);
@@ -174,7 +220,7 @@ async function handler(request) {
     return response({saved:true});
   }
   if (route === '/payment' && request.method === 'POST') {
-    if (!actor.admin) return response({ error: 'Administrator only' }, 403);
+    if (!await canManage(actor,id)) return response({ error: 'Manager access required' }, 403);
     const body=await bodyJson(request);
     if(typeof body.bowlerId!=='string'||!body.bowlerId||typeof body.paid!=='boolean')
       return response({error:'Invalid payment status'},400);
@@ -218,7 +264,7 @@ async function handler(request) {
     return response({ results: result.rows[0]?.data || null, personal: personalData });
   }
   if (route === '/save' && request.method === 'POST') {
-    if (!actor.admin) return response({ error: 'Administrator only' }, 403);
+    if (!await canManage(actor,id)) return response({ error: 'Manager access required' }, 403);
     const body = await bodyJson(request);
     if (!body.state || !Array.isArray(body.state.bowlers) || !body.results || !Array.isArray(body.personal))
       return response({ error: 'Invalid competition data' }, 400);
