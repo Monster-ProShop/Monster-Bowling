@@ -111,6 +111,16 @@ async function handler(request) {
     const { rows } = await pool.query('select data from public.bowling_competition_state where competition_id=$1',[id]);
     return response(rows[0]?.data || null);
   }
+  if (route === '/config' && request.method === 'POST') {
+    if (!actor.admin) return response({ error: 'Administrator only' }, 403);
+    const body=await bodyJson(request);
+    if(!body.config||typeof body.config!=='object'||Array.isArray(body.config))
+      return response({error:'Invalid payout configuration'},400);
+    const {rowCount}=await pool.query(`update public.bowling_competition_state
+      set data=jsonb_set(data,'{config}',$2::jsonb,true),updated_at=now() where competition_id=$1`,[id,body.config]);
+    if(!rowCount) return response({error:'Competition state not found'},404);
+    return response({saved:true});
+  }
   if (route === '/join' && request.method === 'POST') {
     const { rows } = await pool.query(`select 1 from public.bowling_competitions c
       join public.bowling_personal_results p on p.competition_id=c.id

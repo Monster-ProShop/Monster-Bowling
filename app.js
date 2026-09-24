@@ -446,10 +446,11 @@ function setup() {
     }
     const saveState=document.getElementById('configSaveState');
     if(!configured(candidate)){saveState.textContent='Check the payout amounts and percentages.';status('Check the payout configuration.');return;}
-    state.config=candidate;persist();
     saveState.textContent='Saving…';
     try {
-      if(globalThis.MONSTER_PORTAL_MODE) await globalThis.MonsterPortal?.flush();
+      state.config=candidate;
+      if(globalThis.MONSTER_PORTAL_MODE) await globalThis.MonsterPortal.saveConfiguration(candidate);
+      else localStorage.setItem(KEY,JSON.stringify(state));
       saveState.textContent='Saved to Neon.';status('Payout configuration saved.');
     } catch(error) {
       saveState.textContent='Could not save. '+(error.message||'Try again.');status('Payout configuration was not saved.');

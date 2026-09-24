@@ -213,6 +213,12 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     if(saveJob) throw new Error('Neon did not confirm the save.');
     return true;
   }
+  async function saveConfiguration(config) {
+    if(!current||!admin) throw new Error('Open a competition as administrator first.');
+    const result=await api('/config?id='+encodeURIComponent(current.id),'POST',{config});
+    notice('Payout configuration saved to Neon.');
+    return result;
+  }
   async function createCompetition(event) {
     event.preventDefault();
     const name = $('competitionName').value.trim(), kind = $('competitionKind').value;
@@ -234,7 +240,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     window.BowlingApp.setState(state);queueSave(state);await drainSaves();
     $('sessionLabel').value='';notice(label+' was saved. The next session is ready with the roster preserved.');
   }
-  window.MonsterPortal = {persist:queueSave,startNew,flush:flushSaves};
+  window.MonsterPortal = {persist:queueSave,startNew,flush:flushSaves,saveConfiguration};
 
   async function boot() {
     if (!cfg.url || !cfg.apiUrl) {
