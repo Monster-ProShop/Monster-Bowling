@@ -14,7 +14,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     $('portalLogin').textContent = user && !sessionExpired ? 'Log out' : 'Log in';
     $('portalLogin').classList.remove('hidden');
   };
-  const newClient = () => createClient(cfg.url,{auth:{fetchOptions:{credentials:'include',cache:'no-store'}}});
+  const newClient = () => createClient(cfg.url,{auth:{persistSession:true,autoRefreshToken:true,fetchOptions:{credentials:'include',cache:'no-store'}}});
   async function resetExpiredSession() {
     if (!needsSessionReset) return;
     try { await client?.auth.signOut(); } catch {}
@@ -30,7 +30,11 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
   async function api(path, method = 'GET', body) {
     let token = null;
     if (user) {
-      const result = await client.auth.token();
+      let result = await client.auth.token();
+      if(result.error||!result.data?.token) {
+        const restored=await client.auth.getSession();
+        if(restored.data?.user){user=restored.data.user;result=await client.auth.token();}
+      }
       if (result.error || !result.data?.token) {
         lastEmail = user.email || lastEmail;
         sessionExpired = true;
@@ -57,6 +61,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       }
       throw new Error(data.error || 'Request failed');
     }
+    if(user){sessionExpired=false;updateAuthButton();if($('portalNotice').textContent.startsWith('Session expired'))notice('');}
     return data;
   }
 
@@ -104,6 +109,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       show('portalAuth');
       return;
     }
+    notice('');
     if (reauth && current) {
       reauth = false;
       if (admin) {
@@ -131,10 +137,10 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       return;
     }
     const result = await api('/results?id=' + encodeURIComponent(id));
-    renderViewer(result.results, result.personal);
+    renderViewer(result.results, result.personal,{});
     show('portalViewer');
   }
-  function renderViewer(data, personal) {
+  function renderViewer(data, personal, context={}) {
     if (!data?.bowlers) {
       $('viewerContent').innerHTML = '<p>Results have not been published for this competition yet.</p>';
       return;
@@ -157,18 +163,20 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     const brackets = ['hdcp','scratch'].map(type => '<div class="card"><h2>' + (type === 'hdcp' ? 'Handicap' : 'Scratch') + ' brackets</h2>' +
       (data.brackets?.[type] || []).map((ids,i) => '<div class="bracket-scroll">' +
         window.BowlingApp.bracketGraphic(ids,type,data.bowlers,i) + '</div>').join('') + '</div>').join('');
-    let finances = '<div class="card"><h2>Your balance</h2><p>Your email has not been linked to a bowler in this competition yet.</p></div>';
-    if (personal) {
+    const financeCard=value=>{
+      if(!value)return '<div id="balanceCard" class="card"><h2>Your balance</h2><p>Select your bowler above and enable notifications to link your balance.</p></div>';
+      const personal=value;
       const charges = personal.charges?.map(x => '<li>' + esc(x.label) + ': ' + dollars(x.amount) + '</li>').join('') || '<li>No charges</li>';
       const winnings = personal.winnings?.map(x => '<li>' + esc(x.description) + ': ' + dollars(x.amount) + '</li>').join('') || '<li>No winnings</li>';
       const settlement=personal.settlement??(personal.won-(personal.paid?0:personal.due));
       const balanceClass = settlement < 0 ? 'balance-negative' : settlement > 0 ? 'balance-positive' : 'balance-zero';
-      finances = '<div class="card"><h2>Your balance — ' + esc(personal.name) + '</h2><h3>Entry charges</h3><ul>' + charges + '</ul><p>Total due: ' + dollars(personal.due) + ' · Paid: '+(personal.paid?'Yes':'No')+'</p><h3>Winnings</h3><ul>' + winnings + '</ul><p>Total won: ' + dollars(personal.won) + '</p><p class="' + balanceClass + '">Settle now: ' + dollars(settlement) + '</p></div>';
-    }
+      return '<div id="balanceCard" class="card"><h2>Your balance — ' + esc(personal.name) + '</h2><h3>Entry charges</h3><ul>' + charges + '</ul><p><strong>Total charges: ' + dollars(personal.due) + '</strong> · Paid: '+(personal.paid?'Yes':'No')+' · Outstanding: '+dollars(personal.outstanding??(personal.paid?0:personal.due))+'</p><h3>Winnings</h3><ul>' + winnings + '</ul><p><strong>Total won: ' + dollars(personal.won) + '</strong></p><p class="' + balanceClass + '"><strong>Current balance: ' + dollars(settlement) + '</strong></p></div>';
+    };
+    let finances=financeCard(personal);
     const progress=(data.matchups||[]).map((round,i)=>'<div class="card"><h2>Game '+(i+1)+' matchups</h2>'+
       (round.length?'<ul class="matchup-list">'+round.map(x=>'<li><strong>'+esc(x.name)+' ('+x.opponents.length+')</strong>: '+x.opponents.map(esc).join(', ')+'</li>').join('')+'</ul>':'<p class="hint">Matchups will appear when the previous game is decided.</p>')+
       ((data.standings?.[i]||[]).length?'<h3>Standings after game '+(i+1)+'</h3><ol>'+data.standings[i].map(x=>'<li>'+esc(x.name)+' — '+esc(x.score)+'</li>').join('')+'</ol>':'')+'</div>').join('');
-    const notify='<div class="card no-print"><h2>Notifications for this event</h2><p>Choose the bowler whose updates you want for this bowling date.</p><div class="form-grid"><label>Bowler<select id="notifyBowler">'+data.bowlers.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(b=>'<option value="'+esc(b.id)+'">'+esc(b.name)+'</option>').join('')+'</select></label><label>Event date<input id="notifyDate" type="date" value="'+new Date().toLocaleDateString('en-CA')+'"></label><button id="enableNotifications" type="button">Notify me</button></div><p id="notifyStatus" class="hint"></p></div>';
+    const notify='<div class="card no-print"><h2>Notifications for this event</h2><p>Choose your bowler to receive updates and link the correct balance.</p><div class="form-grid"><label>Bowler<select id="notifyBowler">'+data.bowlers.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(b=>'<option value="'+esc(b.id)+'">'+esc(b.name)+'</option>').join('')+'</select></label><label>Event date<input id="notifyDate" type="date" value="'+esc(context.date||new Date().toLocaleDateString('en-CA'))+'"></label><button id="enableNotifications" type="button">Notify me &amp; show my balance</button></div><p id="notifyStatus" class="hint"></p></div>';
     $('viewerContent').innerHTML = notify + finances + progress + scoreboard + brackets + pairs + awards;
     $('enableNotifications')?.addEventListener('click',async()=>{
       try {
@@ -177,8 +185,9 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
         const registration=await navigator.serviceWorker.ready;
         const key=Uint8Array.from(atob(cfg.vapidPublicKey.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
         const subscription=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});
-        await api('/notifications','POST',{competitionId:current?.id,bowlerId:$('notifyBowler').value,eventDate:$('notifyDate').value,subscription});
+        const linked=await api('/notifications','POST',{competitionId:current?.id,bowlerId:$('notifyBowler').value,eventDate:$('notifyDate').value,sessionId:context.sessionId,subscription});
         $('notifyStatus').textContent='Notifications enabled for '+$('notifyBowler').selectedOptions[0].textContent+' on '+$('notifyDate').value+'.';
+        if(linked.personal)$('balanceCard').outerHTML=financeCard(linked.personal);
       } catch(error){$('notifyStatus').textContent=error.message;}
     });
   }
@@ -187,7 +196,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     const rows=await listCompetitions(), competition=rows.find(c=>c.id===result.competitionId);
     current=competition||{id:result.competitionId,name:'Competition'};
     $('viewerCompetition').textContent=(competition?.name||'Competition')+' › '+result.label;
-    renderViewer(result.results,result.personal);show('portalViewer');
+    renderViewer(result.results,result.personal,{sessionId:result.id,date:String(result.date).slice(0,10)});show('portalViewer');
   }
   function queueSave(data) {
     if (!current || !admin) return;

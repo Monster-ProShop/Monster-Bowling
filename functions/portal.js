@@ -36,6 +36,21 @@ async function bodyJson(request) {
   if (raw.length > 2_000_000) throw new Error('Request is too large');
   return JSON.parse(raw);
 }
+function personalForBowler(state,results,bowlerId) {
+  const bowler=(state?.bowlers||[]).find(b=>b.id===bowlerId);if(!bowler)return null;
+  const config=state.config||{},toCents=value=>Math.round(Number(value||0)*100);
+  const count=type=>(state.brackets?.[type]||[]).reduce((n,ids)=>n+ids.filter(id=>id===bowlerId).length,0);
+  const hdcp=count('hdcp'),scratch=count('scratch'),pairs=(state.pairs||[]).filter(ids=>ids.includes(bowlerId)).length;
+  const charges=[
+    ...(hdcp?[{category:'hdcp',label:`${hdcp} handicap bracket${hdcp===1?'':'s'} × $${Number(config.hdcpBuyin||0).toFixed(2)}`,amount:hdcp*toCents(config.hdcpBuyin)}]:[]),
+    ...(scratch?[{category:'scratch',label:`${scratch} scratch bracket${scratch===1?'':'s'} × $${Number(config.scratchBuyin||0).toFixed(2)}`,amount:scratch*toCents(config.scratchBuyin)}]:[]),
+    ...(bowler.high?[{category:'high',label:'Handicap High Game Pot',amount:toCents(config.highBuyin)}]:[]),
+    ...(pairs?[{category:'pairs',label:`${pairs} Doubles team${pairs===1?'':'s'} × $${Number(config.pairsBuyin||0).toFixed(2)}`,amount:pairs*toCents(config.pairsBuyin)}]:[])
+  ];
+  const winnings=(results?.awards||[]).filter(a=>a.name===bowler.name);
+  const due=charges.reduce((n,x)=>n+x.amount,0),won=winnings.reduce((n,x)=>n+Number(x.amount||0),0),paid=!!bowler.paid,outstanding=paid?0:due;
+  return {id:bowler.id,name:bowler.name,paid,charges,due,outstanding,winnings,won,net:won-due,settlement:won-outstanding};
+}
 async function handler(request) {
   const origin = request.headers.get('origin');
   if (origin && origin !== siteOrigin) return response({ error: 'Origin is not allowed' }, 403);
@@ -74,10 +89,18 @@ async function handler(request) {
   if (route === '/session' && request.method === 'GET') {
     const sessionId=url.searchParams.get('id');
     if (!uuid.test(String(sessionId))) return response({ error: 'Invalid session ID' }, 400);
-    const { rows }=await pool.query(`select id,competition_id,label,session_date,results,personal
+    const { rows }=await pool.query(`select id,competition_id,label,session_date,state,results,personal
       from public.bowling_session_archives where id=$1`,[sessionId]);
     if(!rows.length) return response({error:'Session not found'},404);
-    const item=(rows[0].personal||[]).find(x=>String(x.email||'').toLowerCase()===actor.email);
+    let item=(rows[0].personal||[]).find(x=>String(x.email||'').toLowerCase()===actor.email);
+    if(!item) {
+      const selected=await pool.query(`select bowler_id from public.bowling_notification_subscriptions
+        where user_id=$1 and competition_id=$2 and event_date=$3 order by updated_at desc limit 1`,
+        [actor.id,rows[0].competition_id,rows[0].session_date]);
+      const bowler=(rows[0].state?.bowlers||[]).find(b=>b.id===selected.rows[0]?.bowler_id);
+      item=(rows[0].personal||[]).find(x=>x.bowlerId===selected.rows[0]?.bowler_id||String(x.email||'').toLowerCase()===String(bowler?.email||'').toLowerCase());
+      if(!item?.data) item={data:personalForBowler(rows[0].state,rows[0].results,selected.rows[0]?.bowler_id)};
+    }
     return response({id:rows[0].id,competitionId:rows[0].competition_id,label:rows[0].label,
       date:rows[0].session_date,results:rows[0].results,personal:item?.data||null});
   }
@@ -102,7 +125,18 @@ async function handler(request) {
       on conflict(endpoint) do update set user_id=excluded.user_id,competition_id=excluded.competition_id,
       bowler_id=excluded.bowler_id,event_date=excluded.event_date,subscription=excluded.subscription,updated_at=now()`,
       [body.subscription.endpoint,actor.id,body.competitionId,body.bowlerId,body.eventDate,body.subscription]);
-    return response({subscribed:true});
+    let personal=null;
+    if(uuid.test(String(body.sessionId))) {
+      const archive=await pool.query('select state,results,personal from public.bowling_session_archives where id=$1 and competition_id=$2',[body.sessionId,body.competitionId]);
+      const bowler=(archive.rows[0]?.state?.bowlers||[]).find(b=>b.id===body.bowlerId);
+      personal=(archive.rows[0]?.personal||[]).find(x=>x.bowlerId===body.bowlerId||String(x.email||'').toLowerCase()===String(bowler?.email||'').toLowerCase())?.data||personalForBowler(archive.rows[0]?.state,archive.rows[0]?.results,body.bowlerId);
+    } else {
+      const state=await pool.query('select data from public.bowling_competition_state where competition_id=$1',[body.competitionId]);
+      const bowler=(state.rows[0]?.data?.bowlers||[]).find(b=>b.id===body.bowlerId);
+      if(bowler?.email) personal=(await pool.query('select data from public.bowling_personal_results where competition_id=$1 and email=lower($2)',[body.competitionId,bowler.email])).rows[0]?.data||null;
+      personal=personal||personalForBowler(state.rows[0]?.data,(await pool.query('select data from public.bowling_results where competition_id=$1',[body.competitionId])).rows[0]?.data,body.bowlerId);
+    }
+    return response({subscribed:true,personal});
   }
   const id = url.searchParams.get('id');
   if (!uuid.test(String(id))) return response({ error: 'Invalid competition ID' }, 400);
@@ -152,11 +186,20 @@ async function handler(request) {
     return response({ joined: true });
   }
   if (route === '/results' && request.method === 'GET') {
-    const [result,personal] = await Promise.all([
+    const [result,personal,state] = await Promise.all([
       pool.query('select data from public.bowling_results where competition_id=$1',[id]),
-      pool.query('select data from public.bowling_personal_results where competition_id=$1 and email=$2',[id,actor.email])
+      pool.query('select data from public.bowling_personal_results where competition_id=$1 and email=$2',[id,actor.email]),
+      pool.query('select data from public.bowling_competition_state where competition_id=$1',[id])
     ]);
-    return response({ results: result.rows[0]?.data || null, personal: personal.rows[0]?.data || null });
+    let personalData=personal.rows[0]?.data||null;
+    if(!personalData) {
+      const selected=await pool.query(`select bowler_id from public.bowling_notification_subscriptions
+        where user_id=$1 and competition_id=$2 order by event_date desc,updated_at desc limit 1`,[actor.id,id]);
+      const bowler=(state.rows[0]?.data?.bowlers||[]).find(b=>b.id===selected.rows[0]?.bowler_id);
+      if(bowler?.email) personalData=(await pool.query('select data from public.bowling_personal_results where competition_id=$1 and email=lower($2)',[id,bowler.email])).rows[0]?.data||null;
+      personalData=personalData||personalForBowler(state.rows[0]?.data,result.rows[0]?.data,selected.rows[0]?.bowler_id);
+    }
+    return response({ results: result.rows[0]?.data || null, personal: personalData });
   }
   if (route === '/save' && request.method === 'POST') {
     if (!actor.admin) return response({ error: 'Administrator only' }, 403);
