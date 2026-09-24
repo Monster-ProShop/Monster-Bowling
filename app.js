@@ -1,9 +1,9 @@
 const KEY = 'monster-bowling-v2';
-const DEFAULT_CONFIG = {hdcpBuyin:10,hdcpPayoutMode:'percent',hdcpFirst:50,hdcpSecond:25,hdcpFirstAmount:250,hdcpSecondAmount:100,scratchBuyin:10,scratchPayoutMode:'percent',scratchFirst:50,scratchSecond:25,scratchFirstAmount:250,scratchSecondAmount:100,highBuyin:20,highPayout:100,pairsBuyin:20,pairsGamePayout:50,pairsSeriesPayout:50,pairsHighEnabled:true,pairsSeriesEnabled:true};
+const DEFAULT_CONFIG = {hdcpBuyin:10,hdcpFirstAmount:250,hdcpSecondAmount:100,scratchBuyin:10,scratchFirstAmount:250,scratchSecondAmount:100,highBuyin:20,highPayoutAmount:250,pairsBuyin:20,pairsGamePayoutAmount:250,pairsSeriesPayoutAmount:250,pairsHighEnabled:true,pairsSeriesEnabled:true};
 const CONFIG_IDS = Object.keys(DEFAULT_CONFIG);
 const MONEY_IDS = CONFIG_IDS.filter(id=>id.endsWith('Buyin')||id.endsWith('Amount'));
 const NUMBER_IDS = CONFIG_IDS.filter(id=>typeof DEFAULT_CONFIG[id]==='number');
-const PERCENT_IDS = ['hdcpFirst','hdcpSecond','scratchFirst','scratchSecond','highPayout','pairsGamePayout','pairsSeriesPayout'];
+const PERCENT_IDS = [];
 const money = cents => '$' + (cents / 100).toFixed(2);
 const cents = value => Math.round(Number(value) * 100);
 const safe = value => String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -14,7 +14,7 @@ const ES = {
   '/ MANAGER':'/ ADMINISTRADOR',
   'Registration & configuration':'Registro y configuración','Brackets':'Llaves','High Game':'Juego alto',
   'Doubles':'Parejas','Scoring':'Puntuación','Reports & payouts':'Reportes y premios',
-  'Buy-ins and payouts':'Inscripciones y premios','Buy-ins are per bowler or bracket entry. Payout percentages apply to each collected pool. Unallocated funds stay with the tournament.':'Los costos son por jugador o por entrada a una llave. Los porcentajes se aplican a cada fondo recaudado. Los fondos no asignados quedan para el torneo.',
+  'Buy-ins and payouts':'Inscripciones y premios','Buy-ins are per bowler or bracket entry. All awards use the fixed payout amounts saved below.':'Los costos son por jugador o por entrada a una llave. Todos los premios usan las cantidades fijas guardadas abajo.',
   'Handicap bracket':'Llave con hándicap','Scratch bracket':'Llave scratch','Handicap High Game Pot':'Pozo de juego alto con hándicap',
   'Buy-in ($)':'Inscripción ($)','1st place (%)':'1.er lugar (%)','2nd place (%)':'2.º lugar (%)',
   'Winner payout (%)':'Premio al ganador (%)','Highest game plus handicap wins. Tied winners split the payout equally.':'Gana el juego más alto con hándicap. Si hay empate, se divide el premio.',
@@ -68,7 +68,7 @@ const ES = {
   'Download SVG image':'Descargar imagen SVG',
   'New competition started. Previous data is in your JSON backup.':'Nueva competencia iniciada. Los datos anteriores están en la copia JSON.',
   'Backup was not saved. Competition data was kept.':'No se guardó la copia. Se conservaron los datos.',
-  'Check the buy-ins and payout percentages. Keep enabled Doubles payouts at 100% or less.':'Revise las inscripciones y los porcentajes. Los premios activos de Parejas no pueden superar el 100%.',
+  'Check the buy-ins and fixed payout amounts.':'Revise las inscripciones y las cantidades fijas de los premios.',
   'Doubles needs all three scores for every team bowler.':'Parejas necesita las tres puntuaciones de cada integrante.'
 };
 const originalText=new WeakMap();
@@ -118,11 +118,8 @@ function persist() {
 }
 function configured(c) {
   for (const id of NUMBER_IDS) if (typeof c[id]!=='number'||!Number.isFinite(c[id]) || c[id] < 0 || (PERCENT_IDS.includes(id) && c[id] > 100)) return false;
-  if(!['percent','fixed'].includes(c.hdcpPayoutMode)||!['percent','fixed'].includes(c.scratchPayoutMode)) return false;
   if(typeof c.pairsHighEnabled!=='boolean'||typeof c.pairsSeriesEnabled!=='boolean') return false;
-  return (c.hdcpPayoutMode==='fixed'||c.hdcpFirst+c.hdcpSecond <= 100) && (c.scratchPayoutMode==='fixed'||c.scratchFirst+c.scratchSecond <= 100) &&
-    (c.pairsHighEnabled || c.pairsSeriesEnabled) &&
-    (c.pairsHighEnabled?c.pairsGamePayout:0)+(c.pairsSeriesEnabled?c.pairsSeriesPayout:0) <= 100;
+  return c.pairsHighEnabled || c.pairsSeriesEnabled;
 }
 function totalEntries(type) { return state.brackets[type].reduce((n,b)=>n+b.length,0); }
 function assignedCount(type,id) { return state.brackets[type].reduce((n,b)=>n+b.filter(p=>p===id).length,0); }
@@ -269,26 +266,25 @@ function bracketGraphic(ids,type,bowlers,index) {
 }
 function calculate(state) {
   const c=state.config, bowlers=state.bowlers, awards=[], pending=[];
-  if(!configured(c)) return {awards,pending:['Fix payout percentages before calculating payouts.']};
+  if(!configured(c)) return {awards,pending:['Fix the payout amounts before calculating payouts.']};
   for(const type of ['hdcp','scratch']) {
     for(const [i,ids] of state.brackets[type].entries()) {
       const finalists=bracketFinalists(ids,type,bowlers);
       if(!finalists){pending.push(type+' bracket #'+(i+1)+' needs all three scores for every entrant.');continue;}
       const pool=cents(c[type+'Buyin'])*ids.filter(Boolean).length;
       const value=p=>game(p,3,type==='hdcp');
-      const payouts=c[type+'PayoutMode']==='fixed'?[cents(c[type+'FirstAmount']),cents(c[type+'SecondAmount'])]:[Math.round(pool*c[type+'First']/100),Math.round(pool*c[type+'Second']/100)];
+      const payouts=[cents(c[type+'FirstAmount']),cents(c[type+'SecondAmount'])];
       awards.push(...rankAwards(finalists,value,100,payouts,(type==='hdcp'?'HDCP':'Scratch')+' bracket #'+(i+1),type));
     }
   }
   const high=bowlers.filter(b=>b.high);
   if(high.length && high.every(complete)) {
-    awards.push(...rankAwards(high,b=>bestGame(b,true),cents(c.highBuyin)*high.length,[c.highPayout],'HDCP High Game Pot','high'));
+    awards.push(...rankAwards(high,b=>bestGame(b,true),100,[cents(c.highPayoutAmount)],'HDCP High Game Pot','high'));
   } else if(high.length) pending.push('High Game Pot needs all three scores for every entrant.');
   const teams=pairedTeams(state);
   if(teams.length && teams.every(team=>team.every(complete))) {
-    const pool=cents(c.pairsBuyin)*teams.length*2;
-    if(c.pairsHighEnabled) awards.push(...pairAwards(teams,pairBest,Math.round(pool*c.pairsGamePayout/100),'Doubles high game'));
-    if(c.pairsSeriesEnabled) awards.push(...pairAwards(teams,pairSeries,Math.round(pool*c.pairsSeriesPayout/100),'Doubles series'));
+    if(c.pairsHighEnabled) awards.push(...pairAwards(teams,pairBest,cents(c.pairsGamePayoutAmount),'Doubles high game'));
+    if(c.pairsSeriesEnabled) awards.push(...pairAwards(teams,pairSeries,cents(c.pairsSeriesPayoutAmount),'Doubles series'));
   } else if(teams.length) pending.push('Doubles needs all three scores for every team bowler.');
   return {awards,pending};
 }
@@ -431,9 +427,9 @@ function setup() {
     document.querySelectorAll('.panel').forEach(x=>x.classList.toggle('active',x.id===btn.dataset.tab));render();
   }));
   CONFIG_IDS.forEach(id=>document.getElementById(id).addEventListener('change',e=>{
-    const value=e.target.type==='checkbox'?e.target.checked:(id.endsWith('PayoutMode')?e.target.value:num(e.target.value,NaN));
+    const value=e.target.type==='checkbox'?e.target.checked:num(e.target.value,NaN);
     const candidate={...state.config,[id]:value};
-    if((e.target.type!=='checkbox'&&!e.target.value)||!configured(candidate)){status('Check the buy-ins and payout percentages. Keep enabled Doubles payouts at 100% or less.');if(e.target.type==='checkbox')e.target.checked=state.config[id];else e.target.value=state.config[id];return;}
+    if((e.target.type!=='checkbox'&&!e.target.value)||!configured(candidate)){status('Check the buy-ins and fixed payout amounts.');if(e.target.type==='checkbox')e.target.checked=state.config[id];else e.target.value=state.config[id];return;}
     state.config=candidate;render();
     document.getElementById('configSaveState').textContent='Changes not saved yet.';
     status('Configuration changed. Select Save payout configuration to keep it.');
@@ -442,10 +438,10 @@ function setup() {
     const candidate={...state.config};
     for(const id of CONFIG_IDS) {
       const el=document.getElementById(id);
-      candidate[id]=el.type==='checkbox'?el.checked:(id.endsWith('PayoutMode')?el.value:num(el.value,NaN));
+      candidate[id]=el.type==='checkbox'?el.checked:num(el.value,NaN);
     }
     const saveState=document.getElementById('configSaveState');
-    if(!configured(candidate)){saveState.textContent='Check the payout amounts and percentages.';status('Check the payout configuration.');return;}
+    if(!configured(candidate)){saveState.textContent='Check the fixed payout amounts.';status('Check the payout configuration.');return;}
     saveState.textContent='Saving…';
     try {
       state.config=candidate;

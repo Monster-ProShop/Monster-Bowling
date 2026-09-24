@@ -176,8 +176,15 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     const progress=(data.matchups||[]).map((round,i)=>'<div class="card"><h2>Game '+(i+1)+' matchups</h2>'+
       (round.length?'<ul class="matchup-list">'+round.map(x=>'<li><strong>'+esc(x.name)+' ('+x.opponents.length+')</strong>: '+x.opponents.map(esc).join(', ')+'</li>').join('')+'</ul>':'<p class="hint">Matchups will appear when the previous game is decided.</p>')+
       ((data.standings?.[i]||[]).length?'<h3>Standings after game '+(i+1)+'</h3><ol>'+data.standings[i].map(x=>'<li>'+esc(x.name)+' — '+esc(x.score)+'</li>').join('')+'</ol>':'')+'</div>').join('');
-    const notify='<div class="card no-print"><h2>Notifications for this event</h2><p>Choose your bowler to receive updates and link the correct balance.</p><div class="form-grid"><label>Bowler<select id="notifyBowler">'+data.bowlers.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(b=>'<option value="'+esc(b.id)+'">'+esc(b.name)+'</option>').join('')+'</select></label><label>Event date<input id="notifyDate" type="date" value="'+esc(context.date||new Date().toLocaleDateString('en-CA'))+'"></label><button id="enableNotifications" type="button">Notify me &amp; show my balance</button></div><p id="notifyStatus" class="hint"></p></div>';
+    const notify='<div class="card no-print"><h2>Your bowler and notifications</h2><p>Choose your bowler to view the correct balance. Notifications are optional.</p><div class="form-grid"><label>Bowler<select id="notifyBowler">'+data.bowlers.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(b=>'<option value="'+esc(b.id)+'">'+esc(b.name)+'</option>').join('')+'</select></label><label>Event date<input id="notifyDate" type="date" value="'+esc(context.date||new Date().toLocaleDateString('en-CA'))+'"></label></div><div class="actions"><button id="showBalance" type="button">Show my balance</button><button id="enableNotifications" class="secondary" type="button">Enable notifications</button></div><p id="notifyStatus" class="hint"></p></div>';
     $('viewerContent').innerHTML = notify + finances + progress + scoreboard + brackets + pairs + awards;
+    $('showBalance')?.addEventListener('click',async()=>{
+      try {
+        const linked=await api('/balance','POST',{competitionId:current?.id,bowlerId:$('notifyBowler').value,sessionId:context.sessionId});
+        $('balanceCard').outerHTML=financeCard(linked.personal);
+        $('notifyStatus').textContent='Balance linked to '+$('notifyBowler').selectedOptions[0].textContent+'. Notifications remain off.';
+      } catch(error){$('notifyStatus').textContent=error.message;}
+    });
     $('enableNotifications')?.addEventListener('click',async()=>{
       try {
         if(!('serviceWorker' in navigator)||!('PushManager' in window)||!cfg.vapidPublicKey) throw new Error('Notifications are not available on this device yet.');
