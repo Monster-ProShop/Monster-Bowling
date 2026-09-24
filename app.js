@@ -73,6 +73,7 @@ const ES = {
   'Doubles needs all three scores for every team bowler.':'Parejas necesita las tres puntuaciones de cada integrante.',
   'Language / Idioma':'Idioma / Language','Language':'Idioma','English':'Inglés','Log in':'Iniciar sesión','Log out':'Cerrar sesión',
   'Sign in':'Iniciar sesión','Select a league or tournament to view its results. The administrator can sign in to manage all competitions.':'Seleccione una liga o torneo para ver sus resultados. El administrador puede iniciar sesión para gestionar todas las competencias.',
+  'Sign in to view your available leagues, tournaments, sessions and results.':'Inicie sesión para ver sus ligas, torneos, sesiones y resultados disponibles.',
   'Email':'Correo electrónico','Password':'Contraseña','League / tournament':'Liga / torneo','Choose a league or tournament':'Seleccione una liga o torneo',
   'Create an account':'Crear una cuenta','Register with email':'Registrarse con correo electrónico','Confirm the email we send you before signing in. No administrator approval is needed.':'Confirme el correo que le enviaremos antes de iniciar sesión. No necesita aprobación del administrador.',
   'Register':'Registrarse','Verify your email':'Verifique su correo electrónico','Enter the code sent to your email.':'Ingrese el código enviado a su correo electrónico.',

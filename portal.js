@@ -69,6 +69,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
 
   function renderCompetitionOptions(rows, selected) {
     const select = $('loginCompetition');
+    if(!select)return;
     select.innerHTML = '<option value="">Choose a league or tournament</option>' +
       rows.map(c => '<option value="' + esc(c.id) + '">' + esc(c.name) + ' (' + esc(c.kind) + ')</option>').join('');
     if (selected) select.value = selected;
@@ -80,7 +81,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
   async function refreshDashboard() {
     const rows = await listCompetitions();
     competitions=rows;
-    renderCompetitionOptions(rows.filter(c => c.status === 'open'), $('loginCompetition').value);
+    renderCompetitionOptions(rows.filter(c => c.status === 'open'), $('loginCompetition')?.value);
     $('dashboardHeading').textContent = admin ? 'Manage leagues and tournaments' : 'Available leagues and tournaments';
     $('createCompetition').classList.toggle('hidden', !superAdmin);
     $('usersAccess').classList.toggle('hidden',!superAdmin);
@@ -330,7 +331,6 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       event.preventDefault();
       try {
         const email = $('loginEmail').value.trim().toLowerCase(), password = $('loginPassword').value;
-        const selected = $('loginCompetition').value;
         await resetExpiredSession();
         let {data,error} = await client.auth.signIn.email({email,password});
         if (error && /expired|session/i.test(error.message || String(error))) {
@@ -341,7 +341,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
         if (error) throw error;
         needsSessionReset = false;
         $('loginPassword').value = '';
-        await identify(data.user,selected);
+        await identify(data.user);
       } catch (error) { fail(error); }
     });
     $('registerForm').addEventListener('submit',async event => {
