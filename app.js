@@ -315,6 +315,11 @@ function reportSummary(data) {
 }
 function balanceText(amount) { return (amount<0?'−':amount>0?'+':'')+money(Math.abs(amount)); }
 function balanceClass(amount) { return amount<0?'balance-negative':amount>0?'balance-positive':'balance-zero'; }
+function summarizedWinnings(items) {
+  const labels={hdcp:'Handicap brackets',scratch:'Scratch brackets',high:'High Game Pot',pairs:'Doubles'};
+  return Object.entries(items.reduce((totals,item)=>({...totals,[item.category]:(totals[item.category]||0)+item.amount}),{}))
+    .map(([category,amount])=>({label:labels[category]||category,amount}));
+}
 function status(message) { document.getElementById('status').textContent=message;translateUI(); }
 function marked(value,winner) { return winner?'<span class="winner-circle">'+value+'</span>':String(value); }
 function renderHighGame() {
@@ -376,7 +381,7 @@ function render() {
   ];
   document.getElementById('reportNotice').innerHTML=notes.length?'<p class="notice">'+safe(notes.join(' · '))+(report.pending.length?' Balances may change when pending results are entered.':'')+'</p>':'';
   const list=(items,label)=>items.length?'<ul class="breakdown">'+items.map(x=>'<li>'+safe(x.label||x.description)+' <span class="detail-amount">'+money(x.amount)+'</span></li>').join('')+'</ul>':'<span class="hint">'+label+'</span>';
-  document.getElementById('reportRows').innerHTML=report.rows.map(r=>'<tr><td><strong>'+safe(r.name)+'</strong></td><td>'+list(r.charges,'No entries')+'</td><td class="money">'+money(r.due)+'</td><td>'+(r.paid?'Yes':'No')+'</td><td class="money balance-negative">'+money(r.outstanding)+'</td><td>'+list(r.winnings,'No winnings')+'</td><td class="money">'+money(r.won)+'</td>'+['hdcp','scratch','high','pairs'].map(t=>'<td class="money '+balanceClass(r.eventNet[t])+'">'+balanceText(r.eventNet[t])+'</td>').join('')+'<td class="money '+balanceClass(r.net)+'">'+balanceText(r.net)+'</td></tr>').join('')||'<tr><td colspan="12">No bowlers registered yet.</td></tr>';
+  document.getElementById('reportRows').innerHTML=report.rows.map(r=>'<tr><td><strong>'+safe(r.name)+'</strong></td><td>'+list(r.charges,'No entries')+'</td><td class="money">'+money(r.due)+'</td><td>'+(r.paid?'Yes':'No')+'</td><td class="money balance-negative">'+money(r.outstanding)+'</td><td>'+list(summarizedWinnings(r.winnings),'No winnings')+'</td><td class="money">'+money(r.won)+'</td>'+['hdcp','scratch','high','pairs'].map(t=>'<td class="money '+balanceClass(r.eventNet[t])+'">'+balanceText(r.eventNet[t])+'</td>').join('')+'<td class="money '+balanceClass(r.net)+'">'+balanceText(r.net)+'</td></tr>').join('')||'<tr><td colspan="12">No bowlers registered yet.</td></tr>';
   document.getElementById('reportTotals').innerHTML='<div>Total charges<strong>'+money(report.collected)+'</strong></div><div>Payments received<strong>'+money(report.received)+'</strong></div><div>Outstanding<strong>'+money(report.outstanding)+'</strong></div><div>Total winnings<strong>'+money(report.awarded)+'</strong></div><div>Combined bowler balance<strong class="'+balanceClass(report.net)+'">'+balanceText(report.net)+'</strong></div>';
   translateUI();
 }

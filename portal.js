@@ -144,8 +144,13 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     const scoreboard = '<div class="card"><h2>Scores with handicap</h2><div class="table-wrap"><table><thead><tr><th>Bowler</th><th>Game 1</th><th>Game 2</th><th>Game 3</th></tr></thead><tbody>' +
       data.bowlers.map(b => '<tr><td>' + esc(b.name) + '</td>' + [1,2,3].map(g => '<td>' + score(b,g) + '</td>').join('') + '</tr>').join('') +
       '</tbody></table></div></div>';
-    const awards = '<div class="card"><h2>Payouts</h2>' + (data.awards?.length
-      ? '<ul>' + data.awards.map(a => '<li>' + esc(a.name) + ': ' + esc(a.description) + ' — ' + dollars(a.amount) + '</li>').join('') + '</ul>'
+    const payoutTotals=Object.values((data.awards||[]).reduce((totals,award)=>{
+      const key=award.name||'Bowler';
+      totals[key]??={name:key,amount:0};totals[key].amount+=Number(award.amount||0);return totals;
+    },{})).sort((a,b)=>a.name.localeCompare(b.name));
+    const awards = '<div class="card"><h2>Payout summary</h2>' + (payoutTotals.length
+      ? '<div class="table-wrap"><table><thead><tr><th>Bowler</th><th class="money">Total winnings</th></tr></thead><tbody>'+
+        payoutTotals.map(a => '<tr><td>' + esc(a.name) + '</td><td class="money balance-positive">' + dollars(a.amount) + '</td></tr>').join('') + '</tbody></table></div>'
       : '<p>Results are pending.</p>') + '</div>';
     const pairs = '<div class="card"><h2>Doubles teams</h2><ul>' + (data.pairs || []).map(ids =>
       '<li>' + ids.map(id => esc(people[id]?.name || 'Bowler')).join(' &amp; ') + '</li>').join('') + '</ul></div>';
