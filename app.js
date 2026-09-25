@@ -91,7 +91,8 @@ const ES = {
   'Paid':'Pagado','Outstanding':'Pendiente','Settle now':'Liquidar ahora','Payments received':'Pagos recibidos','Total to settle now':'Total por liquidar ahora',
   'Event columns show what must be settled now. Paid bowlers receive their full winnings; unpaid entry charges are deducted. Red is owed and green is payable to the bowler.':'Las columnas muestran lo que debe liquidarse ahora. Los jugadores que pagaron reciben todos sus premios; a quienes no pagaron se les descuentan las inscripciones. Rojo indica deuda y verde indica pago al jugador.',
   'Save this session':'Guardar esta sesión','Save the scores and payouts under this league, then begin the next bowling date with the same roster.':'Guarde las puntuaciones y premios en esta liga y luego inicie la siguiente fecha con la misma lista de jugadores.',
-  'Session name':'Nombre de la sesión','Session date':'Fecha de la sesión','Save session & start next':'Guardar sesión e iniciar la siguiente',
+  'Session name':'Nombre de la sesión','Session date':'Fecha de la sesión','Save session':'Guardar sesión','Start New Session':'Iniciar nueva sesión',
+  'Save the scores and payouts under this league. Starting a new session creates a completely blank registration while keeping the payout configuration.':'Guarde las puntuaciones y premios en esta liga. Iniciar una nueva sesión crea un registro completamente en blanco y conserva la configuración de premios.',
   'Scores with handicap':'Puntuaciones con hándicap','Payout summary':'Resumen de premios','Results are pending.':'Los resultados están pendientes.',
   'Your balance':'Su saldo','Select your bowler above and choose Show my balance.':'Seleccione su jugador arriba y elija Mostrar mi saldo.',
   'Entry charges':'Cargos de inscripción','Winnings':'Premios','Current balance':'Saldo actual','Your bowler and notifications':'Su jugador y notificaciones',
@@ -127,7 +128,8 @@ const ES = {
   'Competitions':'Competencias','Users & access':'Usuarios y acceso','Change an account between User and Manager, then assign the leagues or tournaments that Manager can edit.':'Cambie una cuenta entre Usuario y Encargado y luego asigne las ligas o torneos que puede editar.',
   'SuperAdmin — Users & access':'SuperAdmin — Usuarios y acceso','Designate which registered users can manage a league or tournament, and choose exactly which competitions they can edit.':'Designe qué usuarios registrados pueden administrar una liga o torneo y elija exactamente qué competencias pueden editar.',
   'Find user by email':'Buscar usuario por correo','Start typing an email address':'Comience a escribir un correo electrónico','Search for and select a registered user.':'Busque y seleccione un usuario registrado.',
-  'Saving session…':'Guardando sesión…','Saving scores, payouts and backup…':'Guardando puntuaciones, premios y copia de seguridad…','Session saved. The next session is ready.':'Sesión guardada. La siguiente sesión está lista.','Manager access required.':'Se requiere acceso de encargado.','The latest competition changes could not be saved. Try again.':'No se pudieron guardar los cambios más recientes de la competencia. Inténtelo de nuevo.',
+  'Saving session…':'Guardando sesión…','Saving scores, payouts and backup…':'Guardando puntuaciones, premios y copia de seguridad…','Session saved. The current session remains open.':'Sesión guardada. La sesión actual permanece abierta.','Starting a blank session…':'Iniciando una sesión en blanco…','A new blank session is ready.':'La nueva sesión en blanco está lista.','Manager access required.':'Se requiere acceso de encargado.','The latest competition changes could not be saved. Try again.':'No se pudieron guardar los cambios más recientes de la competencia. Inténtelo de nuevo.',
+  'Start a completely blank session? This removes the active roster, brackets, High Game entries, Doubles teams, scores and payments. Save the current session first if you need to keep it.':'¿Iniciar una sesión completamente en blanco? Esto elimina la lista activa, las llaves, las inscripciones de Juego Alto, las parejas, las puntuaciones y los pagos. Guarde primero la sesión actual si desea conservarla.',
   'Account type':'Tipo de cuenta','User':'Usuario','Manager':'Encargado','Admin':'Administrador','Managed competitions':'Competencias administradas','All competitions':'Todas las competencias','Save access':'Guardar acceso','No users found.':'No se encontraron usuarios.','User access saved.':'Acceso del usuario guardado.'
 };
 const originalText=new WeakMap();
@@ -617,21 +619,27 @@ function setup() {
     if(raw!==''&&(!Number.isInteger(Number(raw))||Number(raw)<0||Number(raw)>300)){status('Enter a whole game score from 0 to 300.');render();return;}
     b.scores[e.target.dataset.game]=raw===''?null:Number(raw);persist();render();status('Score saved.');
   });
-  document.getElementById('startNew').addEventListener('click',async()=>{
+  document.getElementById('saveSession').addEventListener('click',async()=>{
     if(globalThis.MONSTER_PORTAL_MODE){
-      const button=document.getElementById('startNew'),saveState=document.getElementById('sessionSaveState');
+      const button=document.getElementById('saveSession'),saveState=document.getElementById('sessionSaveState');
       button.disabled=true;button.textContent='Saving session…';saveState.textContent='Saving scores, payouts and backup…';status('Saving session…');
-      try{await globalThis.MonsterPortal?.startNew();saveState.textContent='Session saved. The next session is ready.';}
+      try{await globalThis.MonsterPortal?.saveSession();saveState.textContent='Session saved. The current session remains open.';}
       catch(error){const message=error.message||'Could not save the session.';saveState.textContent=message;status(message);}
-      finally{button.disabled=false;button.textContent='Save session & start next';translateUI();}
+      finally{button.disabled=false;button.textContent='Save session';translateUI();}
       return;
     }
-    let confirmedSave=false;
-    try { confirmedSave=await downloadBackup(); }
-    catch(e) { status('Backup was not saved. Competition data was kept.');return; }
-    const prompt=confirmedSave?'Backup saved. Clear this competition and start from scratch?':'Check that the JSON backup downloaded successfully. Clear this competition and start from scratch?';
-    if(!confirm(prompt)){status('Competition data was kept.');return;}
-    const language=state.language;state=fresh();state.language=language;persist();resetForm();document.getElementById('addPairForm').reset();document.getElementById('pairHelp1').textContent='';document.getElementById('pairHelp2').textContent='';document.querySelector('[data-tab="registration"]').click();status('New competition started. Previous data is in your JSON backup.');
+    try{await downloadBackup(true);status('Session backup downloaded.');}catch{status('Backup was not saved. Competition data was kept.');}
+  });
+  document.getElementById('startFresh').addEventListener('click',async()=>{
+    const prompt='Start a completely blank session? This removes the active roster, brackets, High Game entries, Doubles teams, scores and payments. Save the current session first if you need to keep it.';
+    if(!confirm(state.language==='es'?translateText(prompt):prompt))return;
+    const button=document.getElementById('startFresh'),saveState=document.getElementById('sessionSaveState');button.disabled=true;saveState.textContent='Starting a blank session…';
+    try {
+      if(globalThis.MONSTER_PORTAL_MODE)await globalThis.MonsterPortal?.startFresh();
+      else {const config={...state.config},language=state.language;state=fresh();state.config=config;state.language=language;persist();render();document.querySelector('[data-tab="registration"]').click();}
+      saveState.textContent='A new blank session is ready.';
+    } catch(error){const message=error.message||'Could not start a new session.';saveState.textContent=message;status(message);}
+    finally{button.disabled=false;translateUI();}
   });
   document.getElementById('restoreBackup').addEventListener('change',async e=>{
     const file=e.target.files?.[0];if(!file)return;
