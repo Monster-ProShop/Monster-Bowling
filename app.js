@@ -11,58 +11,58 @@ const safe = value => String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':
 const num = (value, fallback=0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const blankScores = () => ({g1:null,g2:null,g3:null});
 const ES = {
-  'Registration, brackets, scoring and payouts':'Registro, llaves, puntuación y premios',
+  'Registration, brackets, scoring and payouts':'Registro, brackets, puntuación y premios',
   '/ MANAGER':'/ ADMINISTRADOR',
-  'Registration & configuration':'Registro y configuración','Brackets':'Llaves','High Game':'Juego alto',
-  'Doubles':'Parejas','Scoring':'Puntuación','Reports & payouts':'Reportes y premios',
-  'Buy-ins and payouts':'Inscripciones y premios','Buy-ins are per bowler or bracket entry. All awards use the fixed payout amounts saved below.':'Los costos son por jugador o por entrada a una llave. Todos los premios usan las cantidades fijas guardadas abajo.',
-  'Handicap bracket':'Llave con hándicap','Scratch bracket':'Llave scratch','Handicap High Game Pot':'Pozo de juego alto con hándicap',
+  'Registration & configuration':'Registro y configuración','Brackets':'Brackets','High Game':'Linea Alta',
+  'Doubles':'Parejas Virtuales','Scoring':'Puntuación','Reports & payouts':'Reportes y premios',
+  'Buy-ins and payouts':'Inscripciones y premios','Buy-ins are per bowler or bracket entry. All awards use the fixed payout amounts saved below.':'Los costos son por jugador o por entrada a un bracket. Todos los premios usan las cantidades fijas guardadas abajo.',
+  'Handicap bracket':'Bracket con hándicap','Scratch bracket':'Bracket scratch','Handicap High Game Pot':'Linea Alta con hándicap',
   'Buy-in ($)':'Inscripción ($)','1st place (%)':'1.er lugar (%)','2nd place (%)':'2.º lugar (%)',
   'Winner payout (%)':'Premio al ganador (%)','Highest game plus handicap wins. Tied winners split the payout equally.':'Gana el juego más alto con hándicap. Si hay empate, se divide el premio.',
   'Buy-in per team entry, per bowler ($)':'Inscripción por equipo, por jugador ($)',
-  'Pay highest combined game':'Premiar el juego combinado más alto','High Game payout (%)':'Premio de juego alto (%)',
+  'Pay highest combined game':'Premiar el juego combinado más alto','High Game payout (%)':'Premio de Linea Alta (%)',
   'Pay highest combined series':'Premiar la serie combinada más alta','Series payout (%)':'Premio de serie (%)',
-  "Each partner's handicap is included in every game. You may pay either prize or both. Enabled payouts together cannot exceed 100% of Doubles buy-ins.":'Se suma el hándicap de ambos jugadores en cada juego. Puede premiar uno o ambos resultados. Los premios activos no pueden superar el 100% de las inscripciones de Parejas.',
-  'Register a bowler':'Registrar jugador','Bracket numbers are the maximum each bowler is willing to play. Doubles charges depend on the teams added in the Doubles tab.':'Los números de llaves son el máximo que cada jugador desea jugar. El costo de Parejas depende de los equipos agregados en esa pestaña.',
-  'Name':'Nombre','Handicap per game':'Hándicap por juego','Max handicap brackets':'Máximo de llaves con hándicap','Max scratch brackets':'Máximo de llaves scratch',
-  'Handicap brackets':'Llaves con hándicap','Scratch brackets':'Llaves scratch','High Game Pot':'Pozo de juego alto',
+  "Each partner's handicap is included in every game. You may pay either prize or both. Enabled payouts together cannot exceed 100% of Doubles buy-ins.":'Se suma el hándicap de ambos jugadores en cada juego. Puede premiar uno o ambos resultados. Los premios activos no pueden superar el 100% de las inscripciones de Parejas Virtuales.',
+  'Register a bowler':'Registrar jugador','Bracket numbers are the maximum each bowler is willing to play. Doubles charges depend on the teams added in the Doubles tab.':'Los números de brackets son el máximo que cada jugador desea jugar. El costo de Parejas Virtuales depende de los equipos agregados en esa pestaña.',
+  'Name':'Nombre','Handicap per game':'Hándicap por juego','Max handicap brackets':'Máximo de brackets con hándicap','Max scratch brackets':'Máximo de brackets scratch',
+  'Handicap brackets':'Brackets con hándicap','Scratch brackets':'Brackets scratch','High Game Pot':'Linea Alta',
   'Add bowler':'Agregar jugador','Save changes':'Guardar cambios','Cancel edit':'Cancelar edición','Roster':'Participantes',
-  'Bowler':'Jugador','Handicap':'Hándicap','Max HDCP':'Máx. hándicap','Max scratch':'Máx. scratch','Doubles teams':'Equipos de Parejas',
+  'Bowler':'Jugador','Handicap':'Hándicap','Max HDCP':'Máx. hándicap','Max scratch':'Máx. scratch','Doubles teams':'Equipos de Parejas Virtuales',
   'Actions':'Acciones','Edit':'Editar','Remove':'Eliminar','Yes':'Sí','No':'No',
-  "The draw maximizes eight-slot brackets within each bowler's limit. With seven entrants, each bracket has one first-round bye. Fewer than seven entrants cannot form a bracket. Unused willingness is not charged.":'El sorteo maximiza las llaves de ocho lugares sin superar el límite de cada jugador. Con siete participantes hay un pase libre por llave. Con menos de siete no se forma una llave. Los lugares no usados no se cobran.',
-  'Generate brackets':'Generar llaves','Handicap brackets':'Llaves con hándicap','Scratch brackets':'Llaves scratch',
+  "The draw maximizes eight-slot brackets within each bowler's limit. With seven entrants, each bracket has one first-round bye. Fewer than seven entrants cannot form a bracket. Unused willingness is not charged.":'El sorteo maximiza los brackets de ocho lugares sin superar el límite de cada jugador. Con siete participantes hay un pase libre por bracket. Con menos de siete no se forma un bracket. Los lugares no usados no se cobran.',
+  'Generate brackets':'Generar brackets','Handicap brackets':'Brackets con hándicap','Scratch brackets':'Brackets scratch',
   'GAME 1':'JUEGO 1','GAME 2 · SEMIFINAL':'JUEGO 2 · SEMIFINAL','GAME 3 · FINAL':'JUEGO 3 · FINAL','WINNER':'GANADOR',
   'Blue circle = winner   •   Red X = loser   •   BYE = automatic advance':'Círculo azul = ganador   •   X roja = perdedor   •   LIBRE = avance automático',
   'BYE':'LIBRE','PENDING':'PENDIENTE',
-  'All three games are shown with handicap added. A green circle marks the leader of each game. The highest single handicap game wins the pot; ties share the payout.':'Se muestran los tres juegos con hándicap. Un círculo verde marca al líder de cada juego. El juego individual más alto gana el pozo; los empates comparten el premio.',
-  'Generate / update standings':'Generar / actualizar resultados','Best game':'Mejor juego','Pot result':'Resultado del pozo',
+  'All three games are shown with handicap added. A green circle marks the leader of each game. The highest single handicap game wins the pot; ties share the payout.':'Se muestran los tres juegos con hándicap. Un círculo verde marca al líder de cada juego. El juego individual más alto gana Linea Alta; los empates comparten el premio.',
+  'Generate / update standings':'Generar / actualizar resultados','Best game':'Mejor juego','Pot result':'Resultado de Linea Alta',
   'Add each two-bowler team here. A bowler may play on multiple different teams and pays one buy-in for each team. Both bowlers must already be in the roster.':'Agregue aquí cada equipo de dos jugadores. Un jugador puede participar en varios equipos distintos y paga una inscripción por cada uno. Ambos deben estar registrados.',
-  'First bowler':'Primer jugador','Second bowler':'Segundo jugador','Add Doubles Team':'Agregar pareja','Please register bowler.':'Por favor, registre al jugador.',
-  "Enter each bowler's scratch games once. Those scores update every bracket and Doubles team that includes that bowler. Handicap is added per game.":'Ingrese una vez los juegos scratch de cada jugador. Los resultados actualizan todas sus llaves y parejas. El hándicap se suma por juego.',
+  'First bowler':'Primer jugador','Second bowler':'Segundo jugador','Add Doubles Team':'Agregar Pareja Virtual','Please register bowler.':'Por favor, registre al jugador.',
+  "Enter each bowler's scratch games once. Those scores update every bracket and Doubles team that includes that bowler. Handicap is added per game.":'Ingrese una vez los juegos scratch de cada jugador. Los resultados actualizan todos sus brackets y Parejas Virtuales. El hándicap se suma por juego.',
   'Scores':'Puntuaciones','Game 1':'Juego 1','Game 2':'Juego 2','Game 3':'Juego 3','Scratch series':'Serie scratch','HDCP series':'Serie con hándicap',
-  'Doubles match totals':'Totales de Parejas','Team':'Equipo','Combined series':'Serie combinada','Combined':'Combinado','Series':'Serie',
+  'Doubles match totals':'Totales de Parejas Virtuales','Team':'Equipo','Combined series':'Serie combinada','Combined':'Combinado','Series':'Serie',
   'Tournament summary':'Resumen del torneo','Event columns show winnings minus buy-ins. Red is a loss; green is a gain. Overall balance is total winnings minus total charges.':'Las columnas por evento muestran premios menos inscripciones. Rojo indica pérdida y verde ganancia. El saldo total es premios menos cargos.',
   'Why they pay':'Motivo del cargo','Total due':'Total a pagar','Winnings and why':'Premios y motivo','Total won':'Total ganado','Scratch':'Scratch','Balance':'Saldo',
   'Total charges':'Cargos totales','Total winnings':'Premios totales','Combined bowler balance':'Saldo combinado de jugadores',
   'Competition data':'Datos de la competencia',"Starting a new competition downloads a JSON backup, then clears this browser's tournament data after you confirm the download is saved.":'Iniciar una competencia descarga una copia JSON y después borra los datos de este navegador cuando confirme que se guardó.',
   'Start New Competition':'Iniciar nueva competencia','Restore a JSON backup':'Restaurar copia JSON','Print report':'Imprimir reporte',
-  'No Doubles teams added yet.':'Todavía no hay parejas agregadas.','Remove team':'Eliminar equipo',
-  'Add a team above to see its game results.':'Agregue una pareja arriba para ver sus resultados.',
+  'No Doubles teams added yet.':'Todavía no hay Parejas Virtuales agregadas.','Remove team':'Eliminar equipo',
+  'Add a team above to see its game results.':'Agregue una Pareja Virtual arriba para ver sus resultados.',
   'Payout is pending until every entrant has all three scores.':'El premio está pendiente hasta que todos tengan tres puntuaciones.',
-  'No bowlers registered for High Game Pot.':'No hay jugadores registrados para el pozo de juego alto.',
-  'No brackets generated. At least seven different bowlers must select this event.':'No se generaron llaves. Se necesitan al menos siete jugadores distintos en este evento.',
+  'No bowlers registered for High Game Pot.':'No hay jugadores registrados para Linea Alta.',
+  'No brackets generated. At least seven different bowlers must select this event.':'No se generaron brackets. Se necesitan al menos siete jugadores distintos en este evento.',
   'No participants.':'Sin participantes.','No winnings':'Sin premios','No entries':'Sin inscripciones',
-  'No bowlers registered yet.':'Todavía no hay jugadores registrados.','No Doubles teams added yet.':'Todavía no hay parejas agregadas.',
+  'No bowlers registered yet.':'Todavía no hay jugadores registrados.','No Doubles teams added yet.':'Todavía no hay Parejas Virtuales agregadas.',
   'Payouts appear after every team bowler has all three scores.':'Los premios aparecerán cuando todos los integrantes tengan tres puntuaciones.',
-  'Doubles results':'Resultados de Parejas','Best combined game:':'Mejor juego combinado:',
-  'Doubles bowlers without a team are not charged.':'Los jugadores sin pareja no pagan inscripción.',
-  'Generate brackets to determine actual bracket charges.':'Genere las llaves para calcular los cargos reales.',
-  'Bowler saved. Generate brackets again after roster changes.':'Jugador guardado. Genere las llaves de nuevo después de cambiar la lista.',
-  'Doubles team added.':'Pareja agregada.','Doubles team removed.':'Pareja eliminada.',
-  'A Doubles team needs two different bowlers.':'Una pareja necesita dos jugadores diferentes.',
-  'This Doubles team is already registered.':'Esta pareja ya está registrada.',
+  'Doubles results':'Resultados de Parejas Virtuales','Best combined game:':'Mejor juego combinado:',
+  'Doubles bowlers without a team are not charged.':'Los jugadores sin Pareja Virtual no pagan inscripción.',
+  'Generate brackets to determine actual bracket charges.':'Genere los brackets para calcular los cargos reales.',
+  'Bowler saved. Generate brackets again after roster changes.':'Jugador guardado. Genere los brackets de nuevo después de cambiar la lista.',
+  'Doubles team added.':'Pareja Virtual agregada.','Doubles team removed.':'Pareja Virtual eliminada.',
+  'A Doubles team needs two different bowlers.':'Una Pareja Virtual necesita dos jugadores diferentes.',
+  'This Doubles team is already registered.':'Esta Pareja Virtual ya está registrada.',
   'Score saved.':'Puntuación guardada.','Configuration saved.':'Configuración guardada.',
-  'High Game standings updated.':'Resultados de juego alto actualizados.',
+  'High Game standings updated.':'Resultados de Linea Alta actualizados.',
   'Competition data was kept.':'Se conservaron los datos de la competencia.',
   'Backup restored.':'Copia restaurada.','Could not read the JSON backup.':'No se pudo leer la copia JSON.',
   'This is not a valid Monster Bowling backup.':'Esta copia JSON de Monster Bowling no es válida.',
@@ -70,7 +70,7 @@ const ES = {
   'New competition started. Previous data is in your JSON backup.':'Nueva competencia iniciada. Los datos anteriores están en la copia JSON.',
   'Backup was not saved. Competition data was kept.':'No se guardó la copia. Se conservaron los datos.',
   'Check the buy-ins and fixed payout amounts.':'Revise las inscripciones y las cantidades fijas de los premios.',
-  'Doubles needs all three scores for every team bowler.':'Parejas necesita las tres puntuaciones de cada integrante.',
+  'Doubles needs all three scores for every team bowler.':'Parejas Virtuales necesita las tres puntuaciones de cada integrante.',
   'Language / Idioma':'Idioma / Language','Language':'Idioma','English':'Inglés','Log in':'Iniciar sesión','Log out':'Cerrar sesión',
   'Sign in':'Iniciar sesión','Select a league or tournament to view its results. The administrator can sign in to manage all competitions.':'Seleccione una liga o torneo para ver sus resultados. El administrador puede iniciar sesión para gestionar todas las competencias.',
   'Sign in to view your available leagues, tournaments, sessions and results.':'Inicie sesión para ver sus ligas, torneos, sesiones y resultados disponibles.',
@@ -84,10 +84,10 @@ const ES = {
   'Manage current session':'Administrar sesión actual','View current session':'Ver sesión actual','Saved sessions':'Sesiones guardadas','View':'Ver','No saved sessions yet.':'Todavía no hay sesiones guardadas.','No competitions are available yet.':'Todavía no hay competencias disponibles.',
   'Payout method: Fixed amount':'Método de premio: cantidad fija','1st place fixed ($)':'1.er lugar fijo ($)','2nd place fixed ($)':'2.º lugar fijo ($)','Winner fixed payout ($)':'Premio fijo al ganador ($)',
   'Highest game plus handicap wins. Tied winners split the fixed payout equally.':'Gana el juego más alto con hándicap. Los ganadores empatados dividen el premio fijo por partes iguales.',
-  'High Game fixed team payout ($)':'Premio fijo por equipo para juego alto ($)','Series fixed team payout ($)':'Premio fijo por equipo para serie ($)',
+  'High Game fixed team payout ($)':'Premio fijo por equipo para Linea Alta ($)','Series fixed team payout ($)':'Premio fijo por equipo para serie ($)',
   "Each partner's handicap is included in every game. Fixed team payouts are split equally between both partners.":'El hándicap de cada integrante se incluye en cada juego. Los premios fijos del equipo se dividen por igual entre ambos.',
   'Save payout configuration':'Guardar configuración de premios','Bowler login email':'Correo de acceso del jugador',
-  "Bracket numbers are the maximum each bowler is willing to play. Doubles charges depend on the teams added in the Doubles tab. Add the bowler's login email so they can see their personal balance.":'Los números de llaves son el máximo que cada jugador está dispuesto a jugar. Los cargos de Parejas dependen de los equipos agregados en esa pestaña. Agregue el correo de acceso del jugador para que pueda ver su saldo personal.',
+  "Bracket numbers are the maximum each bowler is willing to play. Doubles charges depend on the teams added in the Doubles tab. Add the bowler's login email so they can see their personal balance.":'Los números de brackets son el máximo que cada jugador está dispuesto a jugar. Los cargos de Parejas Virtuales dependen de los equipos agregados en esa pestaña. Agregue el correo de acceso del jugador para que pueda ver su saldo personal.',
   'Paid':'Pagado','Outstanding':'Pendiente','Settle now':'Liquidar ahora','Payments received':'Pagos recibidos','Total to settle now':'Total por liquidar ahora',
   'Event columns show what must be settled now. Paid bowlers receive their full winnings; unpaid entry charges are deducted. Red is owed and green is payable to the bowler.':'Las columnas muestran lo que debe liquidarse ahora. Los jugadores que pagaron reciben todos sus premios; a quienes no pagaron se les descuentan las inscripciones. Rojo indica deuda y verde indica pago al jugador.',
   'Save this session':'Guardar esta sesión','Save the scores and payouts under this league, then begin the next bowling date with the same roster.':'Guarde las puntuaciones y premios en esta liga y luego inicie la siguiente fecha con la misma lista de jugadores.',
@@ -96,24 +96,24 @@ const ES = {
   'Scores with handicap':'Puntuaciones con hándicap','Payout summary':'Resumen de premios','Results are pending.':'Los resultados están pendientes.',
   'Your balance':'Su saldo','Select your bowler above and choose Show my balance.':'Seleccione su jugador arriba y elija Mostrar mi saldo.',
   'Entry charges':'Cargos de inscripción','Winnings':'Premios','Current balance':'Saldo actual','Your bowler and notifications':'Su jugador y notificaciones',
-  'Choose your bowler to view the correct balance and only the brackets that include you. Notifications are optional.':'Seleccione su jugador para ver el saldo correcto y solamente las llaves en las que participa. Las notificaciones son opcionales.',
+  'Choose your bowler to view the correct balance and only the brackets that include you. Notifications are optional.':'Seleccione su jugador para ver el saldo correcto y solamente los brackets en las que participa. Las notificaciones son opcionales.',
   'Event date':'Fecha del evento','Show my balance':'Mostrar mi saldo','Enable notifications':'Activar notificaciones',
   'Matchups will appear when the previous game is decided.':'Los enfrentamientos aparecerán cuando se decida el juego anterior.',
-  'This bowler is not entered in any handicap brackets.':'Este jugador no está inscrito en ninguna llave con hándicap.',
-  'This bowler is not entered in any scratch brackets.':'Este jugador no está inscrito en ninguna llave scratch.',
-  'No brackets generated.':'No se generaron llaves.','No charges':'Sin cargos','Competition':'Competencia','open':'abierta','league':'liga','tournament':'torneo',
+  'This bowler is not entered in any handicap brackets.':'Este jugador no está inscrito en ningun bracket con hándicap.',
+  'This bowler is not entered in any scratch brackets.':'Este jugador no está inscrito en ningun bracket scratch.',
+  'No brackets generated.':'No se generaron brackets.','No charges':'Sin cargos','Competition':'Competencia','open':'abierta','league':'liga','tournament':'torneo',
   'Results have not been published for this competition yet.':'Todavía no se han publicado resultados para esta competencia.',
   'Total winnings':'Premios totales','Total won':'Total ganado','Paid:':'Pagado:','Outstanding:':'Pendiente:',
   'Configuration changed. Select Save payout configuration to keep it.':'La configuración cambió. Seleccione Guardar configuración de premios para conservarla.',
   'Changes not saved yet.':'Los cambios todavía no se han guardado.','Saving…':'Guardando…','Saved to Neon.':'Guardado en Neon.',
   'Could not save.':'No se pudo guardar.','Try again.':'Inténtelo de nuevo.','Payout configuration saved.':'Configuración de premios guardada.',
   'Payout configuration was not saved.':'No se guardó la configuración de premios.','Check the fixed payout amounts.':'Revise las cantidades fijas de los premios.',
-  'Check the payout configuration.':'Revise la configuración de premios.','Check the name, handicap and bracket counts.':'Revise el nombre, el hándicap y las cantidades de llaves.',
+  'Check the payout configuration.':'Revise la configuración de premios.','Check the name, handicap and bracket counts.':'Revise el nombre, el hándicap y las cantidades de brackets.',
   'A bowler with that name is already registered.':'Ya existe un jugador registrado con ese nombre.','That login email is already linked to another bowler.':'Ese correo de acceso ya está vinculado a otro jugador.',
   'Saving payment status…':'Guardando estado de pago…','Payment status saved to Neon.':'Estado de pago guardado en Neon.',
-  'Bowler and their Doubles teams removed. Generate brackets again.':'Se eliminaron el jugador y sus parejas. Genere las llaves nuevamente.',
+  'Bowler and their Doubles teams removed. Generate brackets again.':'Se eliminaron el jugador y sus Parejas Virtuales. Genere los brackets nuevamente.',
   'Enter a whole game score from 0 to 300.':'Ingrese una puntuación entera entre 0 y 300.','Register bowlers first.':'Registre jugadores primero.',
-  'Select High Game during registration, then generate the standings.':'Seleccione Juego alto durante el registro y luego genere las posiciones.',
+  'Select High Game during registration, then generate the standings.':'Seleccione Linea Alta durante el registro y luego genere las posiciones.',
   'Unknown':'Desconocido','Full winnings are now payable.':'Ahora corresponde pagar todos los premios.','Entry charges will be deducted from winnings.':'Los cargos de inscripción se descontarán de los premios.',
   'Notifications are not available on this device yet.':'Las notificaciones todavía no están disponibles en este dispositivo.','Notification permission was not granted.':'No se concedió permiso para las notificaciones.',
   'Verify your email before signing in.':'Verifique su correo electrónico antes de iniciar sesión.','Signed in again. Your competition information was preserved.':'Sesión iniciada nuevamente. Se conservó la información de la competencia.',
@@ -129,7 +129,7 @@ const ES = {
   'SuperAdmin — Users & access':'SuperAdmin — Usuarios y acceso','Designate which registered users can manage a league or tournament, and choose exactly which competitions they can edit.':'Designe qué usuarios registrados pueden administrar una liga o torneo y elija exactamente qué competencias pueden editar.',
   'Find user by email':'Buscar usuario por correo','Start typing an email address':'Comience a escribir un correo electrónico','Search for and select a registered user.':'Busque y seleccione un usuario registrado.',
   'Saving session…':'Guardando sesión…','Saving scores, payouts and backup…':'Guardando puntuaciones, premios y copia de seguridad…','Session saved. The current session remains open.':'Sesión guardada. La sesión actual permanece abierta.','Starting a blank session…':'Iniciando una sesión en blanco…','A new blank session is ready.':'La nueva sesión en blanco está lista.','Manager access required.':'Se requiere acceso de encargado.','The latest competition changes could not be saved. Try again.':'No se pudieron guardar los cambios más recientes de la competencia. Inténtelo de nuevo.',
-  'Start a completely blank session? This removes the active roster, brackets, High Game entries, Doubles teams, scores and payments. Save the current session first if you need to keep it.':'¿Iniciar una sesión completamente en blanco? Esto elimina la lista activa, las llaves, las inscripciones de Juego Alto, las parejas, las puntuaciones y los pagos. Guarde primero la sesión actual si desea conservarla.',
+  'Start a completely blank session? This removes the active roster, brackets, High Game entries, Doubles teams, scores and payments. Save the current session first if you need to keep it.':'¿Iniciar una sesión completamente en blanco? Esto elimina la lista activa, los brackets, las inscripciones de Juego Alto, las Parejas Virtuales, las puntuaciones y los pagos. Guarde primero la sesión actual si desea conservarla.',
   'Account type':'Tipo de cuenta','User':'Usuario','Manager':'Encargado','Admin':'Administrador','Managed competitions':'Competencias administradas','All competitions':'Todas las competencias','Save access':'Guardar acceso','No users found.':'No se encontraron usuarios.','User access saved.':'Acceso del usuario guardado.'
 };
 const originalText=new WeakMap();
@@ -156,17 +156,17 @@ function translateText(original) {
     .replace(/\bYes\b/g,'Sí').replace(/\bNo\b/g,'No')
     .replace(/^(.+) marked paid\. Full winnings are now payable\.$/,'$1 marcado como pagado. Ahora corresponde pagar todos los premios.')
     .replace(/^(.+) marked unpaid\. Entry charges will be deducted from winnings\.$/,'$1 marcado como no pagado. Los cargos de inscripción se descontarán de los premios.')
-    .replace(/^Remove (.+) and their Doubles teams\?$/,'¿Eliminar a $1 y sus equipos de Parejas?')
-    .replace(/^(\d+) brackets? generated\.$/,'Se generaron $1 llaves.')
-    .replace(/^Team #(\d+)/,'Equipo n.º $1').replace(/^Pair #(\d+)/,'Pareja n.º $1')
-    .replace(/Doubles high game/g,'Juego alto de Parejas').replace(/Doubles series/g,'Serie de Parejas')
-    .replace(/Doubles team(s)?/g,(_,plural)=>plural?'equipos de Parejas':'equipo de Parejas')
-    .replace(/Handicap bracket(s)?/g,(_,plural)=>plural?'llaves con hándicap':'llave con hándicap')
-    .replace(/Scratch bracket(s)?/g,(_,plural)=>plural?'llaves scratch':'llave scratch')
-    .replace(/HDCP High Game Pot/g,'Pozo de juego alto con hándicap')
-    .replace(/Registered for Doubles but not on a team, so not charged:/g,'Registrados para Parejas pero sin equipo, por lo que no pagan:')
-    .replace(/Unused bracket willingness is not charged:/g,'Los lugares no usados en las llaves no se cobran:')
-    .replace(/Willingness above the available full brackets:/g,'Lugares ofrecidos por encima de las llaves disponibles:')
+    .replace(/^Remove (.+) and their Doubles teams\?$/,'¿Eliminar a $1 y sus equipos de Parejas Virtuales?')
+    .replace(/^(\d+) brackets? generated\.$/,'Se generaron $1 brackets.')
+    .replace(/^Team #(\d+)/,'Equipo n.º $1').replace(/^Pair #(\d+)/,'Pareja Virtual n.º $1')
+    .replace(/Doubles high game/g,'Linea Alta de Parejas Virtuales').replace(/Doubles series/g,'Serie de Parejas Virtuales')
+    .replace(/Doubles team(s)?/g,(_,plural)=>plural?'equipos de Parejas Virtuales':'equipo de Parejas Virtuales')
+    .replace(/Handicap bracket(s)?/g,(_,plural)=>plural?'brackets con hándicap':'bracket con hándicap')
+    .replace(/Scratch bracket(s)?/g,(_,plural)=>plural?'brackets scratch':'bracket scratch')
+    .replace(/HDCP High Game Pot/g,'Linea Alta con hándicap')
+    .replace(/Registered for Doubles but not on a team, so not charged:/g,'Registrados para Parejas Virtuales pero sin equipo, por lo que no pagan:')
+    .replace(/Unused bracket willingness is not charged:/g,'Los lugares no usados en los brackets no se cobran:')
+    .replace(/Willingness above the available full brackets:/g,'Lugares ofrecidos por encima de los brackets disponibles:')
     .replace(/Best combined game:/g,'Mejor juego combinado:').replace(/Winning game:/g,'Juego ganador:').replace(/Payout:/g,'Premio:')
     .replace(/Balances may change when pending results are entered\./g,'Los saldos pueden cambiar cuando se ingresen los resultados pendientes.')
     .replace(/No winnings/g,'Sin premios').replace(/No entries/g,'Sin inscripciones');
