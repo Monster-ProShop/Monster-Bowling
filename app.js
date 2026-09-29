@@ -49,6 +49,7 @@ const ES = {
   'No Doubles teams added yet.':'Todavía no hay Parejas Virtuales agregadas.','Remove team':'Eliminar equipo',
   'Add a team above to see its game results.':'Agregue una Pareja Virtual arriba para ver sus resultados.',
   'Payout is pending until every entrant has all three scores.':'El premio está pendiente hasta que todos tengan tres puntuaciones.',
+  'needs the next score only from bowlers still competing.':'solo necesita la siguiente puntuación de los jugadores que siguen compitiendo.',
   'No bowlers registered for High Game Pot.':'No hay jugadores registrados para Linea Alta.',
   'No brackets generated. At least seven different bowlers must select this event.':'No se generaron brackets. Se necesitan al menos siete jugadores distintos en este evento.',
   'No participants.':'Sin participantes.','No winnings':'Sin premios','No entries':'Sin inscripciones',
@@ -304,12 +305,22 @@ function pairAwards(teams,value,amount,description) {
 function bracketFinalists(ids,type,bowlers) {
   const byId=new Map(bowlers.map(b=>[b.id,b]));
   const players=ids.map(id=>id===null?null:byId.get(id));
-  if(players.some((p,i)=>ids[i]!==null&&(!p||!complete(p)))) return null;
   const hdcp=type==='hdcp';
-  const winners=(group,g)=>{const active=group.filter(Boolean);if(active.length<=1)return active;const max=Math.max(...active.map(p=>game(p,g,hdcp)));return active.filter(p=>game(p,g,hdcp)===max);};
+  if(players.some((p,i)=>ids[i]!==null&&!p))return null;
+  const winners=(group,g)=>{
+    const active=group.filter(Boolean);
+    if(active.length<=1)return active;
+    if(active.some(p=>!hasGame(p,g)))return null;
+    const max=Math.max(...active.map(p=>game(p,g,hdcp)));
+    return active.filter(p=>game(p,g,hdcp)===max);
+  };
   const round1=[0,2,4,6].map(i=>winners(players.slice(i,i+2),1));
+  if(round1.some(result=>result===null))return null;
   const semi=[winners([...round1[0],...round1[1]],2),winners([...round1[2],...round1[3]],2)];
-  return [...semi[0],...semi[1]];
+  if(semi.some(result=>result===null))return null;
+  const finalists=[...semi[0],...semi[1]];
+  if(finalists.length>1&&finalists.some(player=>!hasGame(player,3)))return null;
+  return finalists;
 }
 function bracketGraphic(ids,type,bowlers,index) {
   const byId=new Map(bowlers.map(b=>[b.id,b]));
@@ -376,7 +387,7 @@ function calculate(state) {
   for(const type of ['hdcp','scratch']) {
     for(const [i,ids] of state.brackets[type].entries()) {
       const finalists=bracketFinalists(ids,type,bowlers);
-      if(!finalists){pending.push(type+' bracket #'+(i+1)+' needs all three scores for every entrant.');continue;}
+      if(!finalists){pending.push(type+' bracket #'+(i+1)+' needs the next score only from bowlers still competing.');continue;}
       const pool=cents(c[type+'Buyin'])*ids.filter(Boolean).length;
       const value=p=>game(p,3,type==='hdcp');
       const payouts=[cents(c[type+'FirstAmount']),cents(c[type+'SecondAmount'])];
