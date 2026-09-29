@@ -88,9 +88,9 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     $('accountEmail').textContent = user.email;
     const sessions=await Promise.all(rows.map(c=>api('/sessions?competition_id='+encodeURIComponent(c.id))));
     $('competitionCards').innerHTML = rows.map((c,i) =>
-      '<article class="card competition-card"><h3>' + esc(c.name) + '</h3><p>' + esc(c.kind) +
+      '<article class="card competition-card"><h3>' + esc(c.name||'Unnamed competition') + '</h3><p>' + esc(c.kind) +
       ' · ' + esc(c.status) + '</p><button data-open="' + esc(c.id) + '">' +
-      (c.can_manage ? 'Manage current session' : 'View current session') + '</button><div class="session-list"><strong>Saved sessions</strong>'+
+      (c.can_manage ? 'Manage current session' : 'View current session') + '</button>'+(superAdmin?'<button type="button" class="danger" data-delete-competition="'+esc(c.id)+'" data-competition-name="'+esc(c.name||'Unnamed competition')+'">Delete league/tournament</button>':'')+'<div class="session-list"><strong>Saved sessions</strong>'+
       (sessions[i].length?sessions[i].map(x=>'<div class="session-row"><span>'+esc(x.label)+'<br><small>'+esc(String(x.session_date).slice(0,10))+'</small></span><button class="secondary" data-session="'+esc(x.id)+'">View</button></div>').join(''):'<p class="hint">No saved sessions yet.</p>')+
       '</div></article>'
     ).join('') || '<p>No competitions are available yet.</p>';
@@ -292,6 +292,15 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     $('createCompetition').reset();
     await openCompetition(data.id);
   }
+  async function deleteCompetition(button) {
+    if(!superAdmin)throw new Error('SuperAdmin only');
+    const name=button.dataset.competitionName||'Unnamed competition';
+    const message='Permanently delete '+name+' and all of its sessions, bowlers, brackets, scores, payouts and manager assignments? This cannot be undone.';
+    if(!confirm(window.BowlingApp?.translateText(message)||message))return;
+    button.disabled=true;button.textContent='Deleting…';localize();
+    try{await api('/competitions/delete','POST',{competitionId:button.dataset.deleteCompetition});if(current?.id===button.dataset.deleteCompetition)current=null;notice(name+' was deleted.');await refreshDashboard();}
+    catch(error){button.disabled=false;button.textContent='Delete league/tournament';localize();throw error;}
+  }
   async function saveUserAccess(container) {
     const userId=container.dataset.user,select=container.querySelector('[data-user-role]'),newRole=select.value;
     await api('/users/role','POST',{userId,role:newRole});
@@ -411,6 +420,8 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     $('backDashboard').addEventListener('click',() => void refreshDashboard().catch(fail));
     $('viewerBack').addEventListener('click',() => void refreshDashboard().catch(fail));
     $('competitionCards').addEventListener('click',event => {
+      const remove=event.target.closest('[data-delete-competition]');
+      if(remove){void deleteCompetition(remove).catch(fail);return;}
       const button = event.target.closest('[data-open]');
       if (button) void openCompetition(button.dataset.open).catch(fail);
       const session = event.target.closest('[data-session]');

@@ -125,6 +125,14 @@ async function handler(request) {
       [body.name.trim(),body.kind]);
     return response(rows[0],201);
   }
+  if(route==='/competitions/delete'&&request.method==='POST') {
+    if(actor.role!=='superadmin')return response({error:'SuperAdmin only'},403);
+    const body=await bodyJson(request);
+    if(!uuid.test(String(body.competitionId)))return response({error:'Invalid competition ID'},400);
+    const {rows}=await pool.query('delete from public.bowling_competitions where id=$1 returning id,name',[body.competitionId]);
+    if(!rows.length)return response({error:'Competition not found'},404);
+    return response({deleted:true,competition:rows[0]});
+  }
   if (route === '/sessions' && request.method === 'GET') {
     const competitionId = url.searchParams.get('competition_id');
     if (!uuid.test(String(competitionId))) return response({ error: 'Invalid competition ID' }, 400);

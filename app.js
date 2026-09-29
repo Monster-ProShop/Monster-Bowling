@@ -121,6 +121,7 @@ const ES = {
   'A new verification code has been sent.':'Se envió un nuevo código de verificación.','You are logged out.':'Su sesión se cerró.','Log in to continue.':'Inicie sesión para continuar.',
   'Payout configuration saved to Neon.':'Configuración de premios guardada en Neon.','Site setup is incomplete. The Neon project URL must be configured.':'La configuración del sitio está incompleta. Debe configurarse la dirección del proyecto Neon.',
   'Competition is not available.':'La competencia no está disponible.','Enter a session name and date before saving.':'Ingrese un nombre y una fecha para la sesión antes de guardarla.',
+  'Delete league/tournament':'Eliminar liga/torneo','Deleting…':'Eliminando…','Unnamed competition':'Competencia sin nombre','SuperAdmin only':'Solo para SuperAdmin',
   'Neon did not confirm the save.':'Neon no confirmó el guardado.','Open a competition as administrator first.':'Abra primero una competencia como administrador.',
   'Request failed':'La solicitud falló','Session expired':'La sesión expiró','Session expired.':'La sesión expiró.','Session expired. Sign in again.':'La sesión expiró. Inicie sesión nuevamente.',
   'Your session expired. Log in again to continue; the information on this screen is preserved.':'Su sesión expiró. Inicie sesión nuevamente para continuar; la información de esta pantalla se conservó.',
@@ -152,6 +153,8 @@ function translateText(original) {
     .replace(/Session expired\. Sign in again\./g,'La sesión expiró. Inicie sesión nuevamente.')
     .replace(/^(.+) Use Log in to continue\.$/,'$1 Use Iniciar sesión para continuar.')
     .replace(/^(.+) was saved\. The next session is ready with the roster preserved\.$/,'Se guardó $1. La siguiente sesión está lista con la misma lista de jugadores.')
+    .replace(/^Permanently delete (.+) and all of its sessions, bowlers, brackets, scores, payouts and manager assignments\? This cannot be undone\.$/,'¿Eliminar permanentemente $1 y todas sus sesiones, jugadores, brackets, puntuaciones, premios y asignaciones de encargados? Esta acción no se puede deshacer.')
+    .replace(/^(.+) was deleted\.$/,'Se eliminó $1.')
     .replace(/\bleague\b/g,'liga').replace(/\btournament\b/g,'torneo').replace(/\bopen\b/g,'abierta')
     .replace(/\bYes\b/g,'Sí').replace(/\bNo\b/g,'No')
     .replace(/^(.+) marked paid\. Full winnings are now payable\.$/,'$1 marcado como pagado. Ahora corresponde pagar todos los premios.')
