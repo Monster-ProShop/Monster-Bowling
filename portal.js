@@ -364,6 +364,41 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
         await identify(data.user);
       } catch (error) { fail(error); }
     });
+    const showForgotPassword=showForm=>{
+      $('forgotPasswordForm').classList.toggle('hidden',!showForm);
+      $('loginForm').classList.toggle('hidden',showForm);
+      $('authChoices').classList.toggle('hidden',showForm);
+      $('registerForm').classList.add('hidden');
+      $('verifyForm').classList.add('hidden');
+      if(showForm){$('forgotPasswordEmail').value=$('loginEmail').value.trim()||lastEmail;$('forgotPasswordEmail').focus();}
+      localize();
+    };
+    $('showForgotPassword').addEventListener('click',()=>showForgotPassword(true));
+    $('cancelForgotPassword').addEventListener('click',()=>showForgotPassword(false));
+    $('forgotPasswordForm').addEventListener('submit',async event=>{
+      event.preventDefault();
+      try {
+        const email=$('forgotPasswordEmail').value.trim().toLowerCase();
+        const {error}=await client.auth.requestPasswordReset({email,redirectTo:location.origin+location.pathname});
+        if(error)throw error;
+        notice('If an account exists for that email, a password reset link has been sent.');
+      } catch(error){fail(error);}
+    });
+    $('resetPasswordForm').addEventListener('submit',async event=>{
+      event.preventDefault();
+      try {
+        const password=$('resetPassword').value,confirmation=$('confirmResetPassword').value;
+        if(password!==confirmation)throw new Error('The passwords do not match.');
+        const token=new URLSearchParams(location.search).get('token');
+        if(!token)throw new Error('This password reset link is invalid or has expired.');
+        const {error}=await client.auth.resetPassword({newPassword:password,token});
+        if(error)throw error;
+        $('resetPassword').value='';$('confirmResetPassword').value='';
+        history.replaceState({},'',location.pathname);
+        $('resetPasswordForm').classList.add('hidden');$('loginForm').classList.remove('hidden');$('authChoices').classList.remove('hidden');
+        notice('Password updated. You can now sign in.');$('loginEmail').focus();
+      } catch(error){fail(error);}
+    });
     $('registerForm').addEventListener('submit',async event => {
       event.preventDefault();
       try {
@@ -436,6 +471,12 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     $('userEmailSearch').addEventListener('change',searchAccessUsers);
     $('userSearchResults').addEventListener('click',event=>{const button=event.target.closest('[data-pick-user]');if(!button)return;const account=accessUsers.find(item=>item.id===button.dataset.pickUser);if(!account)return;$('userEmailSearch').value=account.email;$('userSearchResults').innerHTML='';renderAccessUser(account);});
     $('createCompetition').addEventListener('submit',event => void createCompetition(event).catch(fail));
+    const resetParams=new URLSearchParams(location.search),resetToken=resetParams.get('token'),resetError=resetParams.get('error');
+    if(resetToken||resetError){
+      show('portalAuth');$('loginForm').classList.add('hidden');$('authChoices').classList.add('hidden');$('resetPasswordForm').classList.toggle('hidden',!resetToken);$('forgotPasswordForm').classList.toggle('hidden',!resetError);
+      notice(resetError?'This password reset link is invalid or has expired. Request a new link.':'Choose a new password to finish resetting your account.');
+      localize();return;
+    }
     const {data,error} = await client.auth.getSession();
     if (error) throw error;
     await identify(data?.user);
