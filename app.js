@@ -355,6 +355,14 @@ function bracketGraphic(ids,type,bowlers,index) {
   svg+='<text x="20" y="530" fill="#596578" font-size="13">Blue circle = winner   •   Red X = loser   •   BYE = automatic advance</text></svg>';
   return svg;
 }
+function match(ids,gameNumber,handicap,bowlers) {
+  const byId=new Map(bowlers.map(b=>[b.id,b]));
+  const active=ids.filter(Boolean).map(id=>byId.get(id)).filter(Boolean);
+  if(active.length<=1)return {winners:active,decided:true};
+  if(active.some(b=>!hasGame(b,gameNumber)))return {winners:[],decided:false};
+  const top=Math.max(...active.map(b=>game(b,gameNumber,handicap)));
+  return {winners:active.filter(b=>game(b,gameNumber,handicap)===top),decided:true};
+}
 function calculate(state) {
   const c=state.config, bowlers=state.bowlers, awards=[], pending=[];
   if(!configured(c)) return {awards,pending:['Fix the payout amounts before calculating payouts.']};
@@ -704,5 +712,5 @@ if(typeof window!=='undefined') window.BowlingApp={
   language:()=>state.language
 };
 if(typeof document!=='undefined') setup();
-if(typeof module!=='undefined') module.exports={fresh,buildBrackets,addTeamByNames,pairCount,bracketGraphic,calculate,reportSummary,backupPackage,validBackup,rankAwards,configured,complete,assignedCount};
+if(typeof module!=='undefined') module.exports={fresh,buildBrackets,addTeamByNames,pairCount,bracketGraphic,match,matchupSummary,calculate,reportSummary,backupPackage,validBackup,rankAwards,configured,complete,assignedCount};
 
