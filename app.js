@@ -95,7 +95,7 @@ const ES = {
   'Paid':'Pagado','Outstanding':'Pendiente','Settle now':'Liquidar ahora','Payments received':'Pagos recibidos','Total to settle now':'Total por liquidar ahora',
   'Event columns show what must be settled now. Paid bowlers receive their full winnings; unpaid entry charges are deducted. Red is owed and green is payable to the bowler.':'Las columnas muestran lo que debe liquidarse ahora. Los jugadores que pagaron reciben todos sus premios; a quienes no pagaron se les descuentan las inscripciones. Rojo indica deuda y verde indica pago al jugador.',
   'Save this session':'Guardar esta sesión','Save the scores and payouts under this league, then begin the next bowling date with the same roster.':'Guarde las puntuaciones y premios en esta liga y luego inicie la siguiente fecha con la misma lista de jugadores.',
-  'Session name':'Nombre de la sesión','Session date':'Fecha de la sesión','Save session':'Guardar sesión','Start New Session':'Iniciar nueva sesión',
+  'Session name':'Nombre de la sesión','Session date':'Fecha de la sesión','Save session':'Guardar sesión','Start New Session':'Iniciar nueva sesión','Print Payouts':'Imprimir premios','Payout Summary':'Resumen de premios','Printed':'Impreso',
   'Save the scores and payouts under this league. Starting a new session creates a completely blank registration while keeping the payout configuration.':'Guarde las puntuaciones y premios en esta liga. Iniciar una nueva sesión crea un registro completamente en blanco y conserva la configuración de premios.',
   'Scores with handicap':'Puntuaciones con hándicap','Payout summary':'Resumen de premios','Results are pending.':'Los resultados están pendientes.',
   'Your balance':'Su saldo','Select your bowler above and choose Show my balance.':'Seleccione su jugador arriba y elija Mostrar mi saldo.',
@@ -537,6 +537,20 @@ async function downloadBackup(forceDownload=false) {
   setTimeout(()=>URL.revokeObjectURL(url),60000);
   return false;
 }
+function printPayoutsSummary() {
+  const report=reportSummary(state),sheet=document.getElementById('payoutPrintSheet');
+  const text=value=>safe(translateText(value)),competition=document.getElementById('currentCompetition')?.textContent.trim()||translateText('Competition');
+  const reasons=items=>items.length?items.map(item=>text(item.label)).join('<br>'):'—';
+  const winnings=items=>{const rows=summarizedWinnings(items);return rows.length?rows.map(item=>text(item.label)+' '+money(item.amount)).join('<br>'):'—';};
+  const rows=report.rows.map(row=>'<tr><td><strong>'+safe(row.name)+'</strong></td><td>'+reasons(row.charges)+'</td><td class="money">'+money(row.due)+'</td><td>'+text(row.paid?'Yes':'No')+'</td><td class="money">'+money(row.outstanding)+'</td><td>'+winnings(row.winnings)+'</td><td class="money '+balanceClass(row.settlement)+'">'+balanceText(row.settlement)+'</td></tr>').join('');
+  const printed=new Intl.DateTimeFormat(state.language==='es'?'es-MX':'en-US',{dateStyle:'medium',timeStyle:'short'}).format(new Date());
+  sheet.innerHTML='<div class="print-brand"><img src="assets/brackets-logo.png?v=20260922" alt="Brackets by ProDrillOS"><div><h1>'+text('Payout Summary')+'</h1><p><strong>'+safe(competition)+'</strong></p><p>'+text('Printed')+': '+safe(printed)+'</p></div></div><table class="print-payout-table"><thead><tr><th>'+text('Bowler')+'</th><th>'+text('Why they pay')+'</th><th class="money">'+text('Total due')+'</th><th>'+text('Paid')+'</th><th class="money">'+text('Outstanding')+'</th><th>'+text('Winnings')+'</th><th class="money">'+text('Settle now')+'</th></tr></thead><tbody>'+(rows||'<tr><td colspan="7">'+text('No bowlers registered yet.')+'</td></tr>')+'</tbody></table><div class="print-payout-totals"><div>'+text('Total charges')+'<strong>'+money(report.collected)+'</strong></div><div>'+text('Payments received')+'<strong>'+money(report.received)+'</strong></div><div>'+text('Outstanding')+'<strong>'+money(report.outstanding)+'</strong></div><div>'+text('Total winnings')+'<strong>'+money(report.awarded)+'</strong></div><div>'+text('Total to settle now')+'<strong class="'+balanceClass(report.settlement)+'">'+balanceText(report.settlement)+'</strong></div></div>'+(report.pending.length?'<p class="print-pending">'+report.pending.map(text).join(' · ')+'</p>':'');
+  const cleanup=()=>document.body.classList.remove('print-payouts');
+  document.body.classList.add('print-payouts');
+  window.addEventListener('afterprint',cleanup,{once:true});
+  requestAnimationFrame(()=>window.print());
+  setTimeout(cleanup,60000);
+}
 function setup() {
   document.getElementById('language').addEventListener('change',e=>{state.language=e.target.value==='es'?'es':'en';try{localStorage.setItem(LANGUAGE_KEY,state.language);}catch{}persist();render();});
   document.querySelectorAll('[data-tab]').forEach(btn=>btn.addEventListener('click',()=>{
@@ -648,6 +662,7 @@ function setup() {
     if(raw!==''&&(!Number.isInteger(Number(raw))||Number(raw)<0||Number(raw)>300)){status('Enter a whole game score from 0 to 300.');render();return;}
     b.scores[e.target.dataset.game]=raw===''?null:Number(raw);persist();render();status('Score saved.');
   });
+  document.getElementById('printPayouts').addEventListener('click',printPayoutsSummary);
   document.getElementById('saveSession').addEventListener('click',async()=>{
     if(globalThis.MONSTER_PORTAL_MODE){
       const button=document.getElementById('saveSession'),saveState=document.getElementById('sessionSaveState');
