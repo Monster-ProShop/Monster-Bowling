@@ -29,7 +29,7 @@ const ES = {
   'Add bowler':'Agregar jugador','Save changes':'Guardar cambios','Cancel edit':'Cancelar edición','Roster':'Participantes',
   'Bowler':'Jugador','Handicap':'Hándicap','Max HDCP':'Máx. hándicap','Max scratch':'Máx. scratch','Doubles teams':'Equipos de Parejas Virtuales',
   'Actions':'Acciones','Edit':'Editar','Remove':'Eliminar','Yes':'Sí','No':'No',
-  "The draw maximizes eight-slot brackets within each bowler's limit. With seven entrants, each bracket has one first-round bye. Fewer than seven entrants cannot form a bracket. Unused willingness is not charged.":'El sorteo maximiza los brackets de ocho lugares sin superar el límite de cada jugador. Con siete participantes hay un pase libre por bracket. Con menos de siete no se forma un bracket. Los lugares no usados no se cobran.',
+  "The draw maximizes eight-slot brackets within each bowler's limit, while minimizing repeated bracket groups and first-round opponents. With seven entrants, each bracket has one first-round bye. Fewer than seven entrants cannot form a bracket. Unused willingness is not charged.":'El sorteo maximiza los brackets de ocho lugares sin superar el límite de cada jugador y minimiza grupos y oponentes repetidos en la primera ronda. Con siete participantes hay un pase libre por bracket. Con menos de siete no se forma un bracket. Los lugares no usados no se cobran.',
   'Generate brackets':'Generar brackets','Handicap brackets':'Brackets con hándicap','Scratch brackets':'Brackets scratch',
   'GAME 1':'JUEGO 1','GAME 2 · SEMIFINAL':'JUEGO 2 · SEMIFINAL','GAME 3 · FINAL':'JUEGO 3 · FINAL','WINNER':'GANADOR',
   'Blue circle = winner   •   Red X = loser   •   BYE = automatic advance':'Círculo azul = ganador   •   X roja = perdedor   •   LIBRE = avance automático',
@@ -223,6 +223,23 @@ function configured(c) {
 function totalEntries(type) { return state.brackets[type].reduce((n,b)=>n+b.length,0); }
 function assignedCount(type,id) { return state.brackets[type].reduce((n,b)=>n+b.filter(p=>p===id).length,0); }
 function shuffle(a) { for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
+function drawPairKey(a,b) { return a==null||b==null?'':[a,b].sort().join('|'); }
+function allFirstRoundPairings(ids) {
+  if(!ids.length)return [[]];
+  const [first,...rest]=ids,result=[];
+  for(let i=0;i<rest.length;i++) {
+    const second=rest[i],remaining=rest.filter((_,index)=>index!==i);
+    for(const pairs of allFirstRoundPairings(remaining))result.push([[first,second],...pairs]);
+  }
+  return result;
+}
+function seedBracket(ids,matchups) {
+  const choices=allFirstRoundPairings(ids),scores=choices.map(pairs=>({pairs,score:pairs.reduce((sum,[a,b])=>sum+(matchups.get(drawPairKey(a,b))||0),0)}));
+  const best=Math.min(...scores.map(choice=>choice.score)),finalists=shuffle(scores.filter(choice=>choice.score===best));
+  const pairs=shuffle(finalists[0].pairs.map(pair=>shuffle([...pair])));
+  pairs.forEach(([a,b])=>{const key=drawPairKey(a,b);if(key)matchups.set(key,(matchups.get(key)||0)+1);});
+  return pairs.flat();
+}
 function buildBrackets(bowlers,type) {
   const prop = type==='hdcp'?'hdcpCount':'scratchCount';
   const pool = bowlers.map(b=>({id:b.id,limit:Math.max(0,Math.floor(Number(b[prop])||0)),assigned:0}));
@@ -247,13 +264,26 @@ function buildBrackets(bowlers,type) {
     const chosen=shuffle(eligible).sort((a,b)=>(a.assigned/Math.min(a.limit,count))-(b.assigned/Math.min(b.limit,count)))[0];
     chosen.assigned++;
   }
-  // Place the largest assignments first into the emptiest brackets.
+  // Place the largest assignments first. Prefer brackets containing bowlers
+  // this bowler has shared the fewest previous groups with.
   const result=Array.from({length:count},()=>[]);
+  const sharedGroups=new Map(),matchups=new Map();
   shuffle(pool).sort((a,b)=>b.assigned-a.assigned).forEach(b=>{
-    const available=shuffle(result.map((ids,index)=>({ids,index}))).sort((a,b)=>a.ids.length-b.ids.length);
-    available.slice(0,b.assigned).forEach(slot=>slot.ids.push(b.id));
+    for(let placement=0;placement<b.assigned;placement++) {
+      const available=result.map((ids,index)=>({ids,index})).filter(slot=>slot.ids.length<spots&&!slot.ids.includes(b.id));
+      const ranked=shuffle(available).sort((left,right)=>{
+        const repeated=slot=>slot.ids.reduce((sum,id)=>sum+(sharedGroups.get(drawPairKey(b.id,id))||0),0);
+        return repeated(left)-repeated(right)||left.ids.length-right.ids.length;
+      });
+      const chosen=ranked[0];
+      if(!chosen)throw new Error('Unable to place every bracket entry.');
+      chosen.ids.forEach(id=>{const key=drawPairKey(b.id,id);sharedGroups.set(key,(sharedGroups.get(key)||0)+1);});
+      chosen.ids.push(b.id);
+    }
   });
-  return result.map(ids=>shuffle(spots===7?[...ids,null]:ids));
+  // Among all 105 possible pairings in an eight-slot bracket, choose one that
+  // produces the fewest repeated first-round opponent matchups.
+  return result.map(ids=>seedBracket(spots===7?[...ids,null]:ids,matchups));
 }
 function pairCount(data,id) { return data.pairs.filter(ids=>ids.includes(id)).length; }
 function addTeamByNames(data,name1,name2) {
