@@ -251,7 +251,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     $('printSavedSession').classList.toggle('hidden',!(admin&&competition?.can_manage));
     show('portalViewer');
   }
-  function printSavedSession() {
+  async function printSavedSession() {
     if(!(admin&&current?.can_manage))throw new Error('Manager access required.');
     const sheet=$('sessionPrintSheet'),source=$('viewerContent'),copy=source.cloneNode(true);
     copy.removeAttribute('id');copy.className='session-print-content';
@@ -259,12 +259,16 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     copy.querySelectorAll('[id]').forEach(element=>element.removeAttribute('id'));
     const translate=value=>window.BowlingApp?.translateText(value)||value;
     const printed=new Intl.DateTimeFormat(window.BowlingApp?.language()==='es'?'es-MX':'en-US',{dateStyle:'medium',timeStyle:'short'}).format(new Date());
-    sheet.innerHTML='<div class="print-brand"><img src="assets/brackets-logo.png?v=20260922" alt="Brackets by ProDrillOS"><div><h1>'+esc(translate('Saved Session Report'))+'</h1><p><strong>'+esc($('viewerCompetition').textContent)+'</strong></p><p>'+esc(translate('Printed'))+': '+esc(printed)+'</p></div></div>';
+    sheet.innerHTML='<div class="print-brand"><img class="print-badge" src="assets/app-icon.svg" alt="ProDrillOS championship badge"><img class="print-main-logo" src="assets/brackets-logo.png?v=20260922" alt="Brackets by ProDrillOS"><div class="print-title"><h1>'+esc(translate('Saved Session Report'))+'</h1><p><strong>'+esc($('viewerCompetition').textContent)+'</strong></p><p>'+esc(translate('Printed'))+': '+esc(printed)+'</p></div></div>';
     sheet.appendChild(copy);
+    sheet.insertAdjacentHTML('beforeend','<footer class="print-footer">Brackets by ProDrillOS · brackets.prodrillos.com</footer>');
+    await Promise.all([...sheet.querySelectorAll('img')].map(image=>image.complete?image.decode?.().catch(()=>{}):new Promise(resolve=>{image.addEventListener('load',resolve,{once:true});image.addEventListener('error',resolve,{once:true});})));
+    if(document.fonts?.ready)await document.fonts.ready;
     const cleanup=()=>document.body.classList.remove('print-saved-session');
     document.body.classList.add('print-saved-session');
     window.addEventListener('afterprint',cleanup,{once:true});
-    requestAnimationFrame(()=>window.print());
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    window.print();
     setTimeout(cleanup,60000);
   }
   function queueSave(data) {
@@ -473,7 +477,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     });
     $('backDashboard').addEventListener('click',() => void refreshDashboard().catch(fail));
     $('viewerBack').addEventListener('click',() => void refreshDashboard().catch(fail));
-    $('printSavedSession').addEventListener('click',()=>{try{printSavedSession();}catch(error){fail(error);}});
+    $('printSavedSession').addEventListener('click',()=>void printSavedSession().catch(fail));
     $('competitionCards').addEventListener('click',event => {
       const remove=event.target.closest('[data-delete-competition]');
       if(remove){void deleteCompetition(remove).catch(fail);return;}

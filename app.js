@@ -537,18 +537,21 @@ async function downloadBackup(forceDownload=false) {
   setTimeout(()=>URL.revokeObjectURL(url),60000);
   return false;
 }
-function printPayoutsSummary() {
+async function printPayoutsSummary() {
   const report=reportSummary(state),sheet=document.getElementById('payoutPrintSheet');
   const text=value=>safe(translateText(value)),competition=document.getElementById('currentCompetition')?.textContent.trim()||translateText('Competition');
   const reasons=items=>items.length?items.map(item=>text(item.label)).join('<br>'):'—';
   const winnings=items=>{const rows=summarizedWinnings(items);return rows.length?rows.map(item=>text(item.label)+' '+money(item.amount)).join('<br>'):'—';};
   const rows=report.rows.map(row=>'<tr><td><strong>'+safe(row.name)+'</strong></td><td>'+reasons(row.charges)+'</td><td class="money">'+money(row.due)+'</td><td>'+text(row.paid?'Yes':'No')+'</td><td class="money">'+money(row.outstanding)+'</td><td>'+winnings(row.winnings)+'</td><td class="money '+balanceClass(row.settlement)+'">'+balanceText(row.settlement)+'</td></tr>').join('');
   const printed=new Intl.DateTimeFormat(state.language==='es'?'es-MX':'en-US',{dateStyle:'medium',timeStyle:'short'}).format(new Date());
-  sheet.innerHTML='<div class="print-brand"><img src="assets/brackets-logo.png?v=20260922" alt="Brackets by ProDrillOS"><div><h1>'+text('Payout Summary')+'</h1><p><strong>'+safe(competition)+'</strong></p><p>'+text('Printed')+': '+safe(printed)+'</p></div></div><table class="print-payout-table"><thead><tr><th>'+text('Bowler')+'</th><th>'+text('Why they pay')+'</th><th class="money">'+text('Total due')+'</th><th>'+text('Paid')+'</th><th class="money">'+text('Outstanding')+'</th><th>'+text('Winnings')+'</th><th class="money">'+text('Settle now')+'</th></tr></thead><tbody>'+(rows||'<tr><td colspan="7">'+text('No bowlers registered yet.')+'</td></tr>')+'</tbody></table><div class="print-payout-totals"><div>'+text('Total charges')+'<strong>'+money(report.collected)+'</strong></div><div>'+text('Payments received')+'<strong>'+money(report.received)+'</strong></div><div>'+text('Outstanding')+'<strong>'+money(report.outstanding)+'</strong></div><div>'+text('Total winnings')+'<strong>'+money(report.awarded)+'</strong></div><div>'+text('Total to settle now')+'<strong class="'+balanceClass(report.settlement)+'">'+balanceText(report.settlement)+'</strong></div></div>'+(report.pending.length?'<p class="print-pending">'+report.pending.map(text).join(' · ')+'</p>':'');
+  sheet.innerHTML='<div class="print-brand"><img class="print-badge" src="assets/app-icon.svg" alt="ProDrillOS championship badge"><img class="print-main-logo" src="assets/brackets-logo.png?v=20260922" alt="Brackets by ProDrillOS"><div class="print-title"><h1>'+text('Payout Summary')+'</h1><p><strong>'+safe(competition)+'</strong></p><p>'+text('Printed')+': '+safe(printed)+'</p></div></div><table class="print-payout-table"><thead><tr><th>'+text('Bowler')+'</th><th>'+text('Why they pay')+'</th><th class="money">'+text('Total due')+'</th><th>'+text('Paid')+'</th><th class="money">'+text('Outstanding')+'</th><th>'+text('Winnings')+'</th><th class="money">'+text('Settle now')+'</th></tr></thead><tbody>'+(rows||'<tr><td colspan="7">'+text('No bowlers registered yet.')+'</td></tr>')+'</tbody></table><div class="print-payout-totals"><div>'+text('Total charges')+'<strong>'+money(report.collected)+'</strong></div><div>'+text('Payments received')+'<strong>'+money(report.received)+'</strong></div><div>'+text('Outstanding')+'<strong>'+money(report.outstanding)+'</strong></div><div>'+text('Total winnings')+'<strong>'+money(report.awarded)+'</strong></div><div>'+text('Total to settle now')+'<strong class="'+balanceClass(report.settlement)+'">'+balanceText(report.settlement)+'</strong></div></div>'+(report.pending.length?'<p class="print-pending">'+report.pending.map(text).join(' · ')+'</p>':'')+'<footer class="print-footer">Brackets by ProDrillOS · brackets.prodrillos.com</footer>';
+  await Promise.all([...sheet.querySelectorAll('img')].map(image=>image.complete?image.decode?.().catch(()=>{}):new Promise(resolve=>{image.addEventListener('load',resolve,{once:true});image.addEventListener('error',resolve,{once:true});})));
+  if(document.fonts?.ready)await document.fonts.ready;
   const cleanup=()=>document.body.classList.remove('print-payouts');
   document.body.classList.add('print-payouts');
   window.addEventListener('afterprint',cleanup,{once:true});
-  requestAnimationFrame(()=>window.print());
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+  window.print();
   setTimeout(cleanup,60000);
 }
 function setup() {
@@ -662,7 +665,7 @@ function setup() {
     if(raw!==''&&(!Number.isInteger(Number(raw))||Number(raw)<0||Number(raw)>300)){status('Enter a whole game score from 0 to 300.');render();return;}
     b.scores[e.target.dataset.game]=raw===''?null:Number(raw);persist();render();status('Score saved.');
   });
-  document.getElementById('printPayouts').addEventListener('click',printPayoutsSummary);
+  document.getElementById('printPayouts').addEventListener('click',()=>void printPayoutsSummary().catch(error=>status(error.message||'Could not prepare the payout printout.')));
   document.getElementById('saveSession').addEventListener('click',async()=>{
     if(globalThis.MONSTER_PORTAL_MODE){
       const button=document.getElementById('saveSession'),saveState=document.getElementById('sessionSaveState');
