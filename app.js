@@ -29,7 +29,7 @@ const ES = {
   'Add bowler':'Agregar jugador','Save changes':'Guardar cambios','Cancel edit':'Cancelar edición','Roster':'Participantes',
   'Bowler':'Jugador','Handicap':'Hándicap','Max HDCP':'Máx. hándicap','Max scratch':'Máx. scratch','Doubles teams':'Equipos de Parejas Virtuales',
   'Actions':'Acciones','Edit':'Editar','Remove':'Eliminar','Yes':'Sí','No':'No',
-  "The draw maximizes eight-slot brackets within each bowler's limit, while minimizing repeated bracket groups and first-round opponents. With seven entrants, each bracket has one first-round bye. Fewer than seven entrants cannot form a bracket. Unused willingness is not charged.":'El sorteo maximiza los brackets de ocho lugares sin superar el límite de cada jugador y minimiza grupos y oponentes repetidos en la primera ronda. Con siete participantes hay un pase libre por bracket. Con menos de siete no se forma un bracket. Los lugares no usados no se cobran.',
+  "The draw creates the maximum number of complete eight-bowler brackets within each bowler's limit, while minimizing repeated bracket groups and first-round opponents. Fewer than eight entrants cannot form a bracket. Unused willingness is not charged.":'El sorteo crea la cantidad máxima de brackets completos de ocho jugadores sin superar el límite de cada jugador y minimiza grupos y oponentes repetidos en la primera ronda. Con menos de ocho participantes no se forma un bracket. Los lugares no usados no se cobran.',
   'Generate brackets':'Generar brackets','Handicap brackets':'Brackets con hándicap','Scratch brackets':'Brackets scratch',
   'GAME 1':'JUEGO 1','GAME 2 · SEMIFINAL':'JUEGO 2 · SEMIFINAL','GAME 3 · FINAL':'JUEGO 3 · FINAL','WINNER':'GANADOR',
   'Blue circle = winner   •   Red X = loser   •   BYE = automatic advance':'Círculo azul = ganador   •   X roja = perdedor   •   LIBRE = avance automático',
@@ -51,7 +51,7 @@ const ES = {
   'Payout is pending until every entrant has all three scores.':'El premio está pendiente hasta que todos tengan tres puntuaciones.',
   'needs the next score only from bowlers still competing.':'solo necesita la siguiente puntuación de los jugadores que siguen compitiendo.',
   'No bowlers registered for High Game Pot.':'No hay jugadores registrados para Linea Alta.',
-  'No brackets generated. At least seven different bowlers must select this event.':'No se generaron brackets. Se necesitan al menos siete jugadores distintos en este evento.',
+  'No brackets generated. At least eight different bowlers must select this event.':'No se generaron brackets. Se necesitan al menos ocho jugadores distintos en este evento.',
   'No participants.':'Sin participantes.','No winnings':'Sin premios','No entries':'Sin inscripciones',
   'No bowlers registered yet.':'Todavía no hay jugadores registrados.','No Doubles teams added yet.':'Todavía no hay Parejas Virtuales agregadas.',
   'Payouts appear after every team bowler has all three scores.':'Los premios aparecerán cuando todos los integrantes tengan tres puntuaciones.',
@@ -244,13 +244,13 @@ function buildBrackets(bowlers,type) {
   const prop = type==='hdcp'?'hdcpCount':'scratchCount';
   const pool = bowlers.map(b=>({id:b.id,limit:Math.max(0,Math.floor(Number(b[prop])||0)),assigned:0}));
   const eligible=pool.filter(b=>b.limit>0).length;
-  if(eligible<7) return [];
-  const spots=eligible===7?7:8;
+  if(eligible<8) return [];
+  const spots=8;
   const total = pool.reduce((n,b)=>n+b.limit,0);
   let low=0, high=Math.floor(total/spots);
   // A bowler can appear only once in each bracket. This condition gives the
-  // maximum number of brackets possible under everyone's limits. A seven
-  // bowler field gets one first-round bye in each eight-slot bracket.
+  // maximum number of complete eight-bowler brackets possible under
+  // everyone's limits. Incomplete brackets and byes are never generated.
   while(low<high) {
     const mid=Math.ceil((low+high)/2);
     if(pool.reduce((n,b)=>n+Math.min(b.limit,mid),0)>=spots*mid) low=mid;
@@ -283,7 +283,7 @@ function buildBrackets(bowlers,type) {
   });
   // Among all 105 possible pairings in an eight-slot bracket, choose one that
   // produces the fewest repeated first-round opponent matchups.
-  return result.map(ids=>seedBracket(spots===7?[...ids,null]:ids,matchups));
+  return result.map(ids=>seedBracket(ids,matchups));
 }
 function pairCount(data,id) { return data.pairs.filter(ids=>ids.includes(id)).length; }
 function addTeamByNames(data,name1,name2) {
@@ -400,7 +400,7 @@ function bracketGraphic(ids,type,bowlers,index) {
   first.forEach((r,i)=>svg+=box(xs[1],centers2[i]-height/2,r.winners,2,second[Math.floor(i/2)]));
   second.forEach((r,i)=>svg+=box(xs[2],centers3[i]-height/2,r.winners,3,final));
   svg+=box(xs[3],center4-height/2,final.winners,3,{winners:final.winners,decided:final.decided});
-  svg+='<text x="20" y="530" fill="#596578" font-size="13">Blue circle = winner   •   Red X = loser   •   BYE = automatic advance</text></svg>';
+  svg+='<text x="20" y="530" fill="#596578" font-size="13">Blue circle = winner   •   Red X = loser'+(ids.includes(null)?'   •   BYE = automatic advance':'')+'</text></svg>';
   return svg;
 }
 function match(ids,gameNumber,handicap,bowlers) {
@@ -507,7 +507,7 @@ function render() {
   document.getElementById('language').value=state.language;
   document.getElementById('rosterRows').innerHTML=state.bowlers.map(b=>'<tr><td>'+safe(b.name)+(b.email?'<br><small>'+safe(b.email)+'</small>':'')+'</td><td>'+b.handicap+'</td><td>'+b.hdcpCount+'</td><td>'+b.scratchCount+'</td><td>'+(b.high?'Yes':'No')+'</td><td>'+pairCount(state,b.id)+'</td><td><label class="paid-toggle"><input type="checkbox" data-paid="'+safe(b.id)+'" '+(b.paid?'checked':'')+'> Paid</label></td><td><button class="secondary" data-edit="'+safe(b.id)+'">Edit</button> <button class="danger" data-remove="'+safe(b.id)+'">Remove</button></td></tr>').join('') || '<tr><td colspan="8">No bowlers registered yet.</td></tr>';
   for(const type of ['hdcp','scratch']) {
-    document.getElementById(type+'Brackets').innerHTML=state.brackets[type].map((ids,i)=>'<div class="bracket"><div class="bracket-head"><strong>'+(type==='hdcp'?'Handicap':'Scratch')+' bracket #'+(i+1)+'</strong><button class="secondary no-print" data-download="'+type+':'+i+'">Download SVG image</button></div><div class="bracket-scroll">'+bracketGraphic(ids,type,state.bowlers,i)+'</div></div>').join('') || '<p class="hint">No brackets generated. At least seven different bowlers must select this event.</p>';
+    document.getElementById(type+'Brackets').innerHTML=state.brackets[type].map((ids,i)=>'<div class="bracket"><div class="bracket-head"><strong>'+(type==='hdcp'?'Handicap':'Scratch')+' bracket #'+(i+1)+'</strong><button class="secondary no-print" data-download="'+type+':'+i+'">Download SVG image</button></div><div class="bracket-scroll">'+bracketGraphic(ids,type,state.bowlers,i)+'</div></div>').join('') || '<p class="hint">No brackets generated. At least eight different bowlers must select this event.</p>';
   }
   const unused=state.bowlers.flatMap(b=>['hdcp','scratch'].map(t=>{const n=b[t+'Count']-assignedCount(t,b.id);return n>0?b.name+': '+n+' unused '+t+' '+(n===1?'spot':'spots'):null;})).filter(Boolean);
   document.getElementById('bracketNotice').innerHTML=state.generated&&unused.length?'<p class="notice">Willingness above the available full brackets: '+safe(unused.join(' · '))+'</p>':'';
@@ -646,7 +646,7 @@ function setup() {
   document.getElementById('generate').addEventListener('click',()=>{
     state.brackets={hdcp:buildBrackets(state.bowlers,'hdcp'),scratch:buildBrackets(state.bowlers,'scratch')};state.generated=true;persist();render();
     const total=state.brackets.hdcp.length+state.brackets.scratch.length;
-    status(total?total+' bracket'+(total===1?'':'s')+' generated.':'No brackets generated. At least seven different bowlers must join an event.');
+    status(total?total+' bracket'+(total===1?'':'s')+' generated.':'No brackets generated. At least eight different bowlers must join an event.');
   });
   document.getElementById('generateHigh').addEventListener('click',()=>{state.highGenerated=true;persist();render();status('High Game standings updated.');});
   const pairMessage=(id)=>{
