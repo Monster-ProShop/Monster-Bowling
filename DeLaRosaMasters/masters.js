@@ -13,7 +13,9 @@ let language=localStorage.getItem('dlr-language')||'en';
 const tr=s=>language==='es'?(ES[s]||s):s;
 function translate(){document.documentElement.lang=language;$('language').value=language;document.querySelectorAll('[data-t]').forEach(e=>e.textContent=tr(e.dataset.t));$('authButton').textContent=tr(user?'Log out':'Log in');}
 function fresh(){return {format:FORMAT,language,config:{bracketBuyin:50,bracketFirst:250,bracketSecond:100,satHighBuyin:50,satHighPayout:500,sunHighBuyin:50,sunHighPayout:500,doublesBuyin:50,doublesFirst:500,doublesSecond:300,doublesThird:200},bowlers:[],brackets:{satEarly:[],satLate:[],sunday:[]},teams:[],generated:false};}
-let client=createClient(cfg.url,{auth:{persistSession:true,autoRefreshToken:true,fetchOptions:{credentials:'include',cache:'no-store'}}}),user=null,role='user',competition=null,state=fresh(),editing=null,saveTimer=null,saving=false,queued=false;
+const newClient=()=>createClient(cfg.url,{auth:{persistSession:true,autoRefreshToken:true,fetchOptions:{credentials:'include',cache:'no-store'}}});
+let client=newClient(),user=null,role='user',competition=null,state=fresh(),editing=null,saveTimer=null,saving=false,queued=false,needsSessionReset=false;
+async function resetExpiredSession(){if(!needsSessionReset)return;try{await client.auth.signOut();}catch{}client=newClient();user=null;needsSessionReset=false;translate();}
 async function token(){let r=await client.auth.token();if(r.error||!r.data?.token){const restored=await client.auth.getSession();if(restored.data?.user){user=restored.data.user;r=await client.auth.token();}}if(r.error||!r.data?.token)throw new Error('Session expired. Log in again.');return r.data.token;}
 async function api(path,method='GET',body){const auth=user?{'authorization':'Bearer '+await token()}:{};const r=await fetch(cfg.apiUrl+path,{method,headers:{'content-type':'application/json',...auth},body:body===undefined?undefined:JSON.stringify(body)}),data=await r.json();if(!r.ok)throw new Error(data.error||'Request failed');return data;}
 function show(which){['authView','setupView','managerView','viewerView'].forEach(x=>$(x).classList.toggle('hidden',x!==which));}
@@ -59,7 +61,7 @@ async function enter(){const rows=await api('/competitions'),found=rows.find(c=>
 async function identify(u){user=u||null;$('authButton').textContent=tr(user?'Log out':'Log in');if(!user){show('authView');translate();return;}role=(await api('/me')).role||'user';$('superAdminTools').classList.toggle('hidden',role!=='superadmin');await enter();translate();}
 
 $('language').addEventListener('change',e=>{language=e.target.value;localStorage.setItem('dlr-language',language);if(state)state.language=language;translate();if(competition?.can_manage)scheduleSave();});
-$('loginForm').addEventListener('submit',async e=>{e.preventDefault();try{const r=await client.auth.signIn.email({email:$('email').value.trim().toLowerCase(),password:$('password').value});if(r.error)throw r.error;$('password').value='';await identify(r.data.user);}catch(err){notice(err.message,true);}});
+$('loginForm').addEventListener('submit',async e=>{e.preventDefault();try{const credentials={email:$('email').value.trim().toLowerCase(),password:$('password').value};await resetExpiredSession();let r=await client.auth.signIn.email(credentials);if(r.error&&/expired|session|refresh/i.test(r.error.message||String(r.error))){needsSessionReset=true;await resetExpiredSession();r=await client.auth.signIn.email(credentials);}if(r.error)throw r.error;$('password').value='';notice('');await identify(r.data.user);}catch(err){if(/expired|session|refresh/i.test(err.message||String(err)))needsSessionReset=true;notice(err.message,true);}});
 $('authButton').addEventListener('click',async()=>{if(user){await client.auth.signOut();user=null;competition=null;show('authView');translate();}else show('authView');});
 $('createTournament').addEventListener('click',async()=>{try{await api('/competitions','POST',{name:NAME,kind:'tournament'});await enter();notice('De La Rosa Masters created.');}catch(e){notice(e.message,true);}});
 $('tabs').addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(!b)return;document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===b));document.querySelectorAll('.panel').forEach(x=>x.classList.toggle('active',x.id===b.dataset.tab));render();});
@@ -75,6 +77,6 @@ $('teamForm').addEventListener('submit',e=>{e.preventDefault();const find=name=>
 $('teamResults').addEventListener('click',e=>{const b=e.target.closest('[data-remove-team]');if(!b)return;state.teams.splice(Number(b.dataset.removeTeam),1);scheduleSave();render();});
 $('printReport').addEventListener('click',()=>window.print());
 
-(async()=>{translate();try{const r=await client.auth.getSession();await identify(r.data?.user);}catch(e){user=null;client=createClient(cfg.url,{auth:{persistSession:true,autoRefreshToken:true,fetchOptions:{credentials:'include',cache:'no-store'}}});notice(e.message,true);show('authView');translate();}})();
+(async()=>{translate();try{const r=await client.auth.getSession();await identify(r.data?.user);}catch(e){user=null;needsSessionReset=true;notice('Session expired. Log in again.',true);show('authView');translate();}})();
 
 export {fresh,maxBrackets,buildBrackets,bracketResult,rankedAwards};
