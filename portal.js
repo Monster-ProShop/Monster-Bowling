@@ -158,6 +158,10 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     const rows = await listCompetitions();
     const competition = rows.find(c => c.id === id);
     if (!competition) throw new Error('Competition is not available.');
+    if (competition.name.trim().toLocaleLowerCase() === 'de la rosa masters') {
+      location.href = '/DeLaRosaMasters/';
+      return;
+    }
     current = competition;
     $('currentCompetition').textContent = competition.name;
     $('viewerCompetition').textContent = competition.name;

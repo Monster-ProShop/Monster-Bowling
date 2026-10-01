@@ -152,7 +152,12 @@ async function handler(request) {
         where user_id=$1 and competition_id=$2 limit 1`,[actor.id,rows[0].competition_id]);
       bowlerId=selected.rows[0]?.bowler_id;
     }
-    const personal=personalForBowler(rows[0].state,rows[0].results,bowlerId);
+    let personal=personalForBowler(rows[0].state,rows[0].results,bowlerId);
+    if(rows[0].state?.format==='delarosa-masters-v1') {
+      const linkedBowler=(rows[0].state.bowlers||[]).find(b=>b.id===bowlerId);
+      personal=(Array.isArray(rows[0].personal)?rows[0].personal:[]).find(item=>
+        String(item.email||'').toLowerCase()===String(linkedBowler?.email||'').toLowerCase())?.data||null;
+    }
     return response({id:rows[0].id,competitionId:rows[0].competition_id,label:rows[0].label,
       date:rows[0].session_date,results:rows[0].results,personal});
   }
@@ -276,7 +281,13 @@ async function handler(request) {
         where user_id=$1 and competition_id=$2 limit 1`,[actor.id,id]);
       bowlerId=selected.rows[0]?.bowler_id;
     }
-    const personalData=personalForBowler(state.rows[0]?.data,result.rows[0]?.data,bowlerId);
+    let personalData=personalForBowler(state.rows[0]?.data,result.rows[0]?.data,bowlerId);
+    if(state.rows[0]?.data?.format==='delarosa-masters-v1') {
+      const linkedBowler=(state.rows[0].data.bowlers||[]).find(b=>b.id===bowlerId);
+      personalData=linkedBowler?.email?(await pool.query(
+        'select data from public.bowling_personal_results where competition_id=$1 and email=lower($2)',
+        [id,linkedBowler.email])).rows[0]?.data||null:null;
+    }
     return response({ results: result.rows[0]?.data || null, personal: personalData });
   }
   if (route === '/save' && request.method === 'POST') {
