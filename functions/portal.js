@@ -188,16 +188,29 @@ async function handler(request) {
       on conflict(user_id,competition_id) do update set bowler_id=excluded.bowler_id,updated_at=now()`,[actor.id,body.competitionId,body.bowlerId]);
     let personal=null;
     if(uuid.test(String(body.sessionId))) {
-      const archive=await pool.query('select state,results from public.bowling_session_archives where id=$1 and competition_id=$2',[body.sessionId,body.competitionId]);
+      const archive=await pool.query('select state,results,personal from public.bowling_session_archives where id=$1 and competition_id=$2',[body.sessionId,body.competitionId]);
       personal=personalForBowler(archive.rows[0]?.state,archive.rows[0]?.results,body.bowlerId);
+      if(archive.rows[0]?.state?.format==='delarosa-masters-v1') {
+        const linkedBowler=(archive.rows[0].state.bowlers||[]).find(b=>b.id===body.bowlerId);
+        personal=(Array.isArray(archive.rows[0].personal)?archive.rows[0].personal:[]).find(item=>
+          String(item.email||'').toLowerCase()===String(linkedBowler?.email||'').toLowerCase())?.data||null;
+      }
     } else {
       const [state,results]=await Promise.all([
         pool.query('select data from public.bowling_competition_state where competition_id=$1',[body.competitionId]),
         pool.query('select data from public.bowling_results where competition_id=$1',[body.competitionId])]);
       personal=personalForBowler(state.rows[0]?.data,results.rows[0]?.data,body.bowlerId);
+      if(state.rows[0]?.data?.format==='delarosa-masters-v1') {
+        const linkedBowler=(state.rows[0].data.bowlers||[]).find(b=>b.id===body.bowlerId);
+        personal=linkedBowler?.email?(await pool.query(
+          'select data from public.bowling_personal_results where competition_id=$1 and email=lower($2)',
+          [body.competitionId,linkedBowler.email])).rows[0]?.data||null:null;
+      }
     }
+    if(!personal&&((await pool.query('select data->>\'format\' format from public.bowling_competition_state where competition_id=$1',[body.competitionId])).rows[0]?.format==='delarosa-masters-v1'))
+      return response({personal:null,bowlerId:body.bowlerId,linked:true});
     if(!personal)return response({error:'Bowler balance is not available'},404);
-    return response({personal});
+    return response({personal,bowlerId:body.bowlerId,linked:true});
   }
   if (route === '/notifications' && request.method === 'POST') {
     const body=await bodyJson(request);
@@ -288,7 +301,7 @@ async function handler(request) {
         'select data from public.bowling_personal_results where competition_id=$1 and email=lower($2)',
         [id,linkedBowler.email])).rows[0]?.data||null:null;
     }
-    return response({ results: result.rows[0]?.data || null, personal: personalData });
+    return response({ results: result.rows[0]?.data || null, personal: personalData, bowlerId });
   }
   if (route === '/save' && request.method === 'POST') {
     if (!await canManage(actor,id)) return response({ error: 'Manager access required' }, 403);
