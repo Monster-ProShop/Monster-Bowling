@@ -14,7 +14,7 @@ const ES = {
   'Registration, brackets, scoring and payouts':'Registro, brackets, puntuación y premios',
   '/ MANAGER':'/ ADMINISTRADOR',
   'Registration & configuration':'Registro y configuración','Brackets':'Brackets','High Game':'Linea Alta',
-  'Doubles':'Parejas Virtuales','Scoring':'Puntuación','Reports & payouts':'Reportes y premios',
+  'Doubles':'Parejas Virtuales','Scoring':'Puntuación','Reports & payouts':'Reportes y premios','Competition Summary':'Resumen de la competencia','Overview of entries, payouts and profit for this session.':'Resumen de inscripciones, premios y ganancia de esta sesión.','Handicap brackets played':'Brackets con hándicap jugados','Scratch brackets played':'Brackets scratch jugados','High Game entries':'Inscripciones de Línea Alta','Doubles teams played':'Parejas Virtuales jugadas','Total income':'Ingreso total','Total payout':'Pago total','Total profit':'Ganancia total','Summary':'Resumen','Results':'Resultados',
   'Buy-ins and payouts':'Inscripciones y premios','Buy-ins are per bowler or bracket entry. All awards use the fixed payout amounts saved below.':'Los costos son por jugador o por entrada a un bracket. Todos los premios usan las cantidades fijas guardadas abajo.',
   'Handicap bracket':'Bracket con hándicap','Scratch bracket':'Bracket scratch','Handicap High Game Pot':'Linea Alta con hándicap',
   'Buy-in ($)':'Inscripción ($)','1st place (%)':'1.er lugar (%)','2nd place (%)':'2.º lugar (%)',
@@ -456,6 +456,13 @@ function reportSummary(data) {
   const collected=rows.reduce((n,r)=>n+r.due,0), received=rows.reduce((n,r)=>n+(r.paid?r.due:0),0), outstanding=collected-received, awarded=rows.reduce((n,r)=>n+r.won,0),settlement=rows.reduce((n,r)=>n+r.settlement,0);
   return {rows,collected,received,outstanding,awarded,net:awarded-collected,settlement,pending:result.pending};
 }
+function competitionSummary(data) {
+  const report=reportSummary(data);
+  return {handicapBrackets:(data.brackets?.hdcp||[]).length,scratchBrackets:(data.brackets?.scratch||[]).length,highGameEntries:(data.bowlers||[]).filter(b=>b.high).length,doublesTeams:(data.pairs||[]).length,totalIncome:report.collected,totalPayout:report.awarded,totalProfit:report.collected-report.awarded};
+}
+function summaryCards(summary) {
+  return [['Handicap brackets played',summary.handicapBrackets],['Scratch brackets played',summary.scratchBrackets],['High Game entries',summary.highGameEntries],['Doubles teams played',summary.doublesTeams],['Total income',money(summary.totalIncome)],['Total payout',money(summary.totalPayout)],['Total profit',money(summary.totalProfit)]].map(([label,value],index)=>'<div class="summary-metric '+(index===6?'profit':'')+'"><span>'+safe(label)+'</span><strong class="'+(index===6?balanceClass(summary.totalProfit):'')+'">'+value+'</strong></div>').join('');
+}
 function balanceText(amount) { return (amount<0?'−':amount>0?'+':'')+money(Math.abs(amount)); }
 function balanceClass(amount) { return amount<0?'balance-negative':amount>0?'balance-positive':'balance-zero'; }
 function summarizedWinnings(items) {
@@ -526,6 +533,7 @@ function render() {
   const list=(items,label)=>items.length?'<ul class="breakdown">'+items.map(x=>'<li>'+safe(x.label||x.description)+' <span class="detail-amount">'+money(x.amount)+'</span></li>').join('')+'</ul>':'<span class="hint">'+label+'</span>';
   document.getElementById('reportRows').innerHTML=report.rows.map(r=>'<tr><td><strong>'+safe(r.name)+'</strong></td><td>'+list(r.charges,'No entries')+'</td><td class="money">'+money(r.due)+'</td><td>'+(r.paid?'Yes':'No')+'</td><td class="money balance-negative">'+money(r.outstanding)+'</td><td>'+list(summarizedWinnings(r.winnings),'No winnings')+'</td><td class="money">'+money(r.won)+'</td>'+['hdcp','scratch','high','pairs'].map(t=>'<td class="money '+balanceClass(r.eventNet[t])+'">'+balanceText(r.eventNet[t])+'</td>').join('')+'<td class="money '+balanceClass(r.settlement)+'">'+balanceText(r.settlement)+'</td></tr>').join('')||'<tr><td colspan="12">No bowlers registered yet.</td></tr>';
   document.getElementById('reportTotals').innerHTML='<div>Total charges<strong>'+money(report.collected)+'</strong></div><div>Payments received<strong>'+money(report.received)+'</strong></div><div>Outstanding<strong>'+money(report.outstanding)+'</strong></div><div>Total winnings<strong>'+money(report.awarded)+'</strong></div><div>Total to settle now<strong class="'+balanceClass(report.settlement)+'">'+balanceText(report.settlement)+'</strong></div>';
+  document.getElementById('competitionSummaryCards').innerHTML=summaryCards(competitionSummary(state));
   translateUI();
 }
 function resetForm() {
@@ -766,6 +774,7 @@ if(typeof window!=='undefined') window.BowlingApp={
       pending:report.pending,
       matchups:matchupSummary(state),
       standings:[1,2,3].map(g=>state.bowlers.filter(b=>hasGame(b,g)).map(b=>({name:b.name,score:game(b,g,true)})).sort((a,b)=>b.score-a.score||a.name.localeCompare(b.name)))
+      ,summary:competitionSummary(state)
     };
     const personal=state.bowlers.filter(b=>b.email).map(b=>({
       email:b.email.trim().toLowerCase(),
@@ -778,5 +787,5 @@ if(typeof window!=='undefined') window.BowlingApp={
   language:()=>state.language
 };
 if(typeof document!=='undefined') setup();
-if(typeof module!=='undefined') module.exports={fresh,buildBrackets,addTeamByNames,pairCount,bracketGraphic,match,matchupSummary,calculate,reportSummary,backupPackage,validBackup,rankAwards,configured,complete,assignedCount};
+if(typeof module!=='undefined') module.exports={fresh,buildBrackets,addTeamByNames,pairCount,bracketGraphic,match,matchupSummary,calculate,reportSummary,competitionSummary,backupPackage,validBackup,rankAwards,configured,complete,assignedCount};
 

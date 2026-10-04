@@ -18,6 +18,25 @@ function response(data, status = 200) {
       'vary': 'Origin', 'cache-control': 'no-store' }
   });
 }
+function competitionSummary(state={},results={}) {
+  const config=state.config||{},bowlers=state.bowlers||[],brackets=state.brackets||{},awards=results.awards||[],dlr=state.format==='delarosa-masters-v1';
+  const bracketCount=keys=>keys.reduce((n,key)=>n+(brackets[key]?.length||0),0);
+  const entryCount=keys=>keys.reduce((n,key)=>n+(brackets[key]||[]).reduce((sum,ids)=>sum+ids.filter(Boolean).length,0),0);
+  let handicapBrackets,scratchBrackets,highGameEntries,doublesTeams,totalIncome;
+  if(dlr){
+    const handicapKeys=['satEarly','satLate','sunday'],scratchKeys=['scratchEarly','scratchLate','scratchSunday'];
+    handicapBrackets=bracketCount(handicapKeys);scratchBrackets=bracketCount(scratchKeys);
+    highGameEntries=bowlers.reduce((n,b)=>n+(b.events?.satHigh?1:0)+(b.events?.sunHigh?1:0),0);
+    doublesTeams=(state.teams||[]).length;
+    totalIncome=Math.round(entryCount(handicapKeys)*Number(config.bracketBuyin||0)*100+entryCount(scratchKeys)*Number(config.scratchBracketBuyin||0)*100+bowlers.filter(b=>b.events?.satHigh).length*Number(config.satHighBuyin||0)*100+bowlers.filter(b=>b.events?.sunHigh).length*Number(config.sunHighBuyin||0)*100+doublesTeams*2*Number(config.doublesBuyin||0)*100);
+  }else{
+    handicapBrackets=brackets.hdcp?.length||0;scratchBrackets=brackets.scratch?.length||0;
+    highGameEntries=bowlers.filter(b=>b.high).length;doublesTeams=(state.pairs||[]).length;
+    totalIncome=Math.round(entryCount(['hdcp'])*Number(config.hdcpBuyin||0)*100+entryCount(['scratch'])*Number(config.scratchBuyin||0)*100+highGameEntries*Number(config.highBuyin||0)*100+doublesTeams*2*Number(config.pairsBuyin||0)*100);
+  }
+  const totalPayout=awards.reduce((n,a)=>n+Number(a.amount||0),0);
+  return{handicapBrackets,scratchBrackets,highGameEntries,doublesTeams,totalIncome,totalPayout,totalProfit:totalIncome-totalPayout};
+}
 async function identity(request) {
   const header = request.headers.get('authorization') || '';
   if (!header.toLowerCase().startsWith('bearer ')) return null;
@@ -158,8 +177,9 @@ async function handler(request) {
       personal=(Array.isArray(rows[0].personal)?rows[0].personal:[]).find(item=>
         String(item.email||'').toLowerCase()===String(linkedBowler?.email||'').toLowerCase())?.data||null;
     }
+    const results={...(rows[0].results||{}),summary:competitionSummary(rows[0].state,rows[0].results)};
     return response({id:rows[0].id,competitionId:rows[0].competition_id,label:rows[0].label,
-      date:rows[0].session_date,results:rows[0].results,personal});
+      date:rows[0].session_date,results,personal});
   }
   if (route === '/sessions' && request.method === 'POST') {
     const body=await bodyJson(request);
@@ -301,7 +321,8 @@ async function handler(request) {
         'select data from public.bowling_personal_results where competition_id=$1 and email=lower($2)',
         [id,linkedBowler.email])).rows[0]?.data||null:null;
     }
-    return response({ results: result.rows[0]?.data || null, personal: personalData, bowlerId });
+    const resultData=result.rows[0]?.data||null;
+    return response({ results: resultData?{...resultData,summary:competitionSummary(state.rows[0]?.data,resultData)}:null, personal: personalData, bowlerId });
   }
   if (route === '/save' && request.method === 'POST') {
     if (!await canManage(actor,id)) return response({ error: 'Manager access required' }, 403);
