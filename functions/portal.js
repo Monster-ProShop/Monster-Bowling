@@ -314,7 +314,20 @@ async function handler(request) {
       const exists = await db.query('select 1 from public.bowling_competitions where id=$1',[id]);
       if (!exists.rows.length) { await db.query('rollback'); return response({ error: 'Competition not found' },404); }
       const previous=await db.query('select data from public.bowling_competition_state where competition_id=$1',[id]);
-      const persistedById=new Map((previous.rows[0]?.data?.bowlers||[]).map(b=>[b.id,b]));
+      const previousData=previous.rows[0]?.data||{},persistedById=new Map((previousData.bowlers||[]).map(b=>[b.id,b]));
+      if(previousData.saturdayLocked){
+        const incomingById=new Map((body.state.bowlers||[]).map(b=>[b.id,b]));
+        const saturdayKeys=['satEarly','satLate','scratchEarly','scratchLate'];
+        const saturdayConfig=['bracketBuyin','bracketFirst','bracketSecond','scratchBracketBuyin','scratchBracketFirst','scratchBracketSecond','satHighBuyin','satHighPayout'];
+        const changedLockedData=body.state.saturdayLocked!==true||
+          saturdayKeys.some(key=>JSON.stringify(previousData.brackets?.[key]||[])!==JSON.stringify(body.state.brackets?.[key]||[]))||
+          saturdayConfig.some(key=>Number(previousData.config?.[key]||0)!==Number(body.state.config?.[key]||0))||
+          (previousData.bowlers||[]).some(old=>{const next=incomingById.get(old.id);return !next||old.name!==next.name||Number(old.handicap||0)!==Number(next.handicap||0)||
+            ['satEarly','satLate','scratchEarly','scratchLate','satHigh'].some(key=>JSON.stringify(old.events?.[key]||0)!==JSON.stringify(next.events?.[key]||0))||
+            [0,1,2,3].some(index=>JSON.stringify(old.scores?.[index]??null)!==JSON.stringify(next.scores?.[index]??null));})||
+          (body.state.bowlers||[]).some(next=>!persistedById.has(next.id)&&([0,1,2,3].some(index=>next.scores?.[index]!=null)||['satEarly','satLate','scratchEarly','scratchLate','satHigh'].some(key=>next.events?.[key])));
+        if(changedLockedData){await db.query('rollback');return response({error:'Saturday scores and brackets are locked. Reload and add Sunday information only.'},409);}
+      }
       const clearsSavedScore=body.state.bowlers.some(b=>{
         const old=persistedById.get(b.id);
         return old?.scores?.some((score,index)=>score!==null&&score!==''&&score!==undefined&&
