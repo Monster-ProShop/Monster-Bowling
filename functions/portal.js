@@ -314,6 +314,16 @@ async function handler(request) {
       const exists = await db.query('select 1 from public.bowling_competitions where id=$1',[id]);
       if (!exists.rows.length) { await db.query('rollback'); return response({ error: 'Competition not found' },404); }
       const previous=await db.query('select data from public.bowling_competition_state where competition_id=$1',[id]);
+      const persistedById=new Map((previous.rows[0]?.data?.bowlers||[]).map(b=>[b.id,b]));
+      const clearsSavedScore=body.state.bowlers.some(b=>{
+        const old=persistedById.get(b.id);
+        return old?.scores?.some((score,index)=>score!==null&&score!==''&&score!==undefined&&
+          (b.scores?.[index]===null||b.scores?.[index]===''||b.scores?.[index]===undefined));
+      });
+      if(clearsSavedScore){
+        await db.query('rollback');
+        return response({error:'Newer scores are already saved. Reload the tournament before making more changes.'},409);
+      }
       const oldById=new Map((previous.rows[0]?.data?.bowlers||[]).map(b=>[b.id,JSON.stringify(b.scores)]));
       changed=body.state.bowlers.filter(b=>oldById.has(b.id)&&oldById.get(b.id)!==JSON.stringify(b.scores));
       await db.query(`insert into public.bowling_competition_state (competition_id,data) values ($1,$2)
