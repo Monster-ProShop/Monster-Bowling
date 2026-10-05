@@ -37,6 +37,12 @@ function competitionSummary(state={},results={}) {
   const totalPayout=awards.reduce((n,a)=>n+Number(a.amount||0),0);
   return{handicapBrackets,scratchBrackets,highGameEntries,doublesTeams,totalIncome,totalPayout,totalProfit:totalIncome-totalPayout};
 }
+// Strip previously saved summaries too: hiding the tab does not protect API responses.
+function resultsForViewer(results,state,canViewSummary=false) {
+  if(!results)return null;
+  const {summary,...visible}=results;
+  return canViewSummary?{...visible,summary:competitionSummary(state,results)}:visible;
+}
 async function identity(request) {
   const header = request.headers.get('authorization') || '';
   if (!header.toLowerCase().startsWith('bearer ')) return null;
@@ -177,7 +183,7 @@ async function handler(request) {
       personal=(Array.isArray(rows[0].personal)?rows[0].personal:[]).find(item=>
         String(item.email||'').toLowerCase()===String(linkedBowler?.email||'').toLowerCase())?.data||null;
     }
-    const results={...(rows[0].results||{}),summary:competitionSummary(rows[0].state,rows[0].results)};
+    const results=resultsForViewer(rows[0].results||{},rows[0].state,await canManage(actor,rows[0].competition_id));
     return response({id:rows[0].id,competitionId:rows[0].competition_id,label:rows[0].label,
       date:rows[0].session_date,results,personal});
   }
@@ -322,7 +328,7 @@ async function handler(request) {
         [id,linkedBowler.email])).rows[0]?.data||null:null;
     }
     const resultData=result.rows[0]?.data||null;
-    return response({ results: resultData?{...resultData,summary:competitionSummary(state.rows[0]?.data,resultData)}:null, personal: personalData, bowlerId });
+    return response({ results: resultsForViewer(resultData,state.rows[0]?.data,await canManage(actor,id)), personal: personalData, bowlerId });
   }
   if (route === '/save' && request.method === 'POST') {
     if (!await canManage(actor,id)) return response({ error: 'Manager access required' }, 403);
@@ -393,3 +399,4 @@ export default { async fetch(request) {
   try { return await handler(request); }
   catch (error) { console.error(error); return response({ error: 'Server error' }, 500); }
 } };
+

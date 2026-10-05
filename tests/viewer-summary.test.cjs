@@ -1,0 +1,62 @@
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const vm=require('node:vm');
+const root=require('node:path').resolve(__dirname,'..');
+const backend=fs.readFileSync(root+'/functions/portal.js','utf8');
+const projection=backend.slice(backend.indexOf('function competitionSummary('),backend.indexOf('async function identity('));
+const ctx=vm.createContext({});vm.runInContext(projection,ctx);
+const state={config:{hdcpBuyin:50},bowlers:[],brackets:{hdcp:[['a','b','c','d','e','f','g','h']]}};
+const results={bowlers:[{id:'a',name:'Selected'}],awards:[{amount:10000}],summary:{totalIncome:999999,totalProfit:999999}};
+test('regular users never receive a saved or computed summary',()=>{
+ const visible=ctx.resultsForViewer(results,state,false);
+ assert.equal(Object.hasOwn(visible,'summary'),false);
+ assert.equal(visible.bowlers,results.bowlers);
+ assert.equal(results.summary.totalIncome,999999);
+ assert.equal(ctx.resultsForViewer(null,state,false),null);
+});
+test('authorized management receives the recomputed summary',()=>{
+ const visible=ctx.resultsForViewer(results,state,true);
+ assert.equal(visible.summary.totalIncome,40000);
+ assert.equal(visible.summary.totalPayout,10000);
+ assert.equal(visible.summary.totalProfit,30000);
+});
+test('both current and archived API routes enforce competition authorization',()=>{
+ assert.match(backend,/resultsForViewer\(rows\[0\]\.results\|\|\{\},rows\[0\]\.state,await canManage\(actor,rows\[0\]\.competition_id\)\)/);
+ assert.match(backend,/resultsForViewer\(resultData,state\.rows\[0\]\?\.data,await canManage\(actor,id\)\)/);
+});
+test('Masters viewer keeps only selected bowler results and no summary tab',()=>{
+ const source=fs.readFileSync(root+'/DeLaRosaMasters/masters.js','utf8');
+ const render=source.slice(source.indexOf('function renderViewer('),source.indexOf('\nfunction render(){'));
+ const elements=new Map();const $=id=>{if(!elements.has(id))elements.set(id,{innerHTML:'',addEventListener(){}});return elements.get(id)};
+ const context=vm.createContext({$,document:{querySelectorAll:()=>[]},NAME:'De La Rosa Masters',viewerDay:'summary',tr:x=>x,esc:x=>String(x??''),money:n=>'$'+n/100,translate(){},SATURDAY_KEYS:['satEarly'],SUNDAY_KEYS:['sunday'],TITLES:{satEarly:'Saturday bracket',sunday:'Sunday bracket'},viewerDiagram:ids=>ids.join(','),dayFinancial:()=>({due:100,won:200,outstanding:0,paid:true,settlement:200,charges:[],winnings:[]})});
+ vm.runInContext(render,context);
+ const data={bowlers:[{id:'a',name:'Selected',handicap:0,scores:[100,101,102,103,104,105,106]},{id:'b',name:'Unrelated',handicap:0,scores:[200,201,202,203,204,205,206]}],brackets:{satEarly:[['a','opponent'],['b','other']],sunday:[]},teams:[['b','other']],summary:{totalIncome:999999}};
+ context.renderViewer(data,{id:'a',name:'Selected'},'a');
+ const html=$('viewerContent').innerHTML;
+ assert.equal(context.viewerDay,'saturday');
+ assert.doesNotMatch(html,/data-viewer-day="summary"|Competition Summary|999999/);
+ const panels=html.slice(html.indexOf('<nav class="tabs viewer-day-tabs">'));
+ assert.match(panels,/Selected/);assert.match(panels,/a,opponent/);
+ assert.doesNotMatch(panels,/Unrelated|b,other|200/);
+ context.renderViewer(data,null,null);
+ assert.doesNotMatch($('viewerContent').innerHTML,/data-viewer-panel/);
+});
+test('main viewer filters scores, teams, matchups and awards to selected bowler',()=>{
+ const source=fs.readFileSync(root+'/portal.js','utf8');
+ const render=source.slice(source.indexOf('  function renderViewer('),source.indexOf('  async function openSavedSession('));
+ const elements=new Map();const $=id=>{if(!elements.has(id))elements.set(id,{innerHTML:'',addEventListener(){}});return elements.get(id)};
+ const context=vm.createContext({$,document:{querySelectorAll:()=>[]},user:{},sessionExpired:false,admin:false,current:{can_manage:false},cfg:{},window:{BowlingApp:{bracketGraphic:ids=>ids.join(',')}},esc:x=>String(x??''),dollars:n=>'$'+n/100,localize(){}});
+ vm.runInContext(render,context);
+ const data={bowlers:[{id:'a',name:'Selected',scores:{g1:101},handicap:0},{id:'b',name:'Unrelated',scores:{g1:299},handicap:0}],brackets:{hdcp:[['a','opponent'],['b','other']],scratch:[]},pairs:[['b','other']],awards:[{name:'Unrelated',amount:999999}],matchups:[[{id:'b',name:'Unrelated',opponents:['Other']}]],standings:[[{name:'Unrelated',score:299}]],summary:{totalIncome:999999}};
+ context.renderViewer(data,{id:'a',name:'Selected',charges:[],winnings:[],due:0,won:0});
+ const html=$('viewerContent').innerHTML;
+ const results=html.slice(html.indexOf('<div id="balanceCard"'));
+ assert.match(results,/Selected|a,opponent/);
+ assert.doesNotMatch(results,/Unrelated|299|999999|b,other|Competition Summary/);
+ context.renderViewer(data,null);
+ assert.doesNotMatch($('viewerContent').innerHTML,/Scores with handicap|a,opponent|Payout summary/);
+ context.admin=true;context.current.can_manage=true;
+ context.renderViewer(data,null);
+ assert.match($('viewerContent').innerHTML,/Competition Summary/);
+});
