@@ -29,23 +29,33 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     updateAuthButton();
   }
 
+  async function activeToken(attempts = 5) {
+    let lastError = null;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      const result = await client.auth.token();
+      if (!result.error && result.data?.token) return result.data.token;
+      lastError = result.error || lastError;
+      const restored = await client.auth.getSession();
+      if (restored.error) lastError = restored.error;
+      if (restored.data?.user) user = restored.data.user;
+      if (attempt < attempts - 1) await new Promise(resolve => setTimeout(resolve, 150 * (attempt + 1)));
+    }
+    throw lastError || new Error('Session expired. Sign in again.');
+  }
+
   async function api(path, method = 'GET', body) {
     let token = null;
     if (user) {
-      let result = await client.auth.token();
-      if(result.error||!result.data?.token) {
-        const restored=await client.auth.getSession();
-        if(restored.data?.user){user=restored.data.user;result=await client.auth.token();}
-      }
-      if (result.error || !result.data?.token) {
+      try {
+        token = await activeToken();
+      } catch (error) {
         lastEmail = user.email || lastEmail;
         sessionExpired = true;
         needsSessionReset = true;
         updateAuthButton();
         notice('Your session expired. Log in again to continue; the information on this screen is preserved.');
-        throw result.error || new Error('Session expired. Sign in again.');
+        throw error;
       }
-      token = result.data.token;
     }
     const result = await fetch(cfg.apiUrl + path, {
       method,
@@ -164,8 +174,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       if(user){
         const restored=await client.auth.getSession();
         if(restored.error||!restored.data?.user)throw restored.error||new Error('Session expired. Sign in again.');
-        const currentToken=await client.auth.token();
-        if(currentToken.error||!currentToken.data?.token)throw currentToken.error||new Error('Session expired. Sign in again.');
+        await activeToken();
       }
       location.href = '/DeLaRosaMasters/';
       return;
@@ -401,6 +410,8 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
         if (error) throw error;
         needsSessionReset = false;
         $('loginPassword').value = '';
+        user = data.user;
+        await activeToken();
         await identify(data.user);
       } catch (error) { fail(error); }
     });
