@@ -174,7 +174,8 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       if(user){
         const restored=await client.auth.getSession();
         if(restored.error||!restored.data?.user)throw restored.error||new Error('Session expired. Sign in again.');
-        await activeToken();
+        const handoffToken=await activeToken();
+        sessionStorage.setItem('dlr-auth-handoff',JSON.stringify({token:handoffToken,user,createdAt:Date.now()}));
       }
       location.href = '/DeLaRosaMasters/';
       return;
@@ -484,6 +485,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     $('portalLogin').addEventListener('click',async () => {
       if (user && !sessionExpired) {
         await client.auth.signOut();
+        sessionStorage.removeItem('dlr-auth-handoff');
         user = null; role='user';admin = false;superAdmin=false; current = null; reauth = false; sessionExpired = false;
         updateAuthButton();
         await identify(null);
