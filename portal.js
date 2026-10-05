@@ -184,13 +184,17 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       return;
     }
     const people = Object.fromEntries(data.bowlers.map(b => [b.id,b]));
+    const canViewSummary=!!(user&&!sessionExpired&&admin&&current?.can_manage);
     const summary=data.summary||{handicapBrackets:data.brackets?.hdcp?.length||0,scratchBrackets:data.brackets?.scratch?.length||0,highGameEntries:data.bowlers.filter(b=>b.high).length,doublesTeams:(data.pairs||[]).length,totalIncome:0,totalPayout:(data.awards||[]).reduce((n,a)=>n+Number(a.amount||0),0),totalProfit:0};
-    const summaryCard='<div class="card"><h2>Competition Summary</h2><p class="hint">Overview of entries, payouts and profit for this session.</p><div class="summary-grid">'+[['Handicap brackets played',summary.handicapBrackets],['Scratch brackets played',summary.scratchBrackets],['High Game entries',summary.highGameEntries],['Doubles teams played',summary.doublesTeams],['Total income',dollars(summary.totalIncome)],['Total payout',dollars(summary.totalPayout)],['Total profit',dollars(summary.totalProfit)]].map(([label,value],index)=>'<div class="summary-metric '+(index===6?'profit':'')+'"><span>'+esc(label)+'</span><strong class="'+(index===6?(summary.totalProfit<0?'balance-negative':summary.totalProfit>0?'balance-positive':'balance-zero'):'')+'">'+value+'</strong></div>').join('')+'</div></div>';
+    const summaryCard=canViewSummary?'<div class="card"><h2>Competition Summary</h2><p class="hint">Overview of entries, payouts and profit for this session.</p><div class="summary-grid">'+[['Handicap brackets played',summary.handicapBrackets],['Scratch brackets played',summary.scratchBrackets],['High Game entries',summary.highGameEntries],['Doubles teams played',summary.doublesTeams],['Total income',dollars(summary.totalIncome)],['Total payout',dollars(summary.totalPayout)],['Total profit',dollars(summary.totalProfit)]].map(([label,value],index)=>'<div class="summary-metric '+(index===6?'profit':'')+'"><span>'+esc(label)+'</span><strong class="'+(index===6?(summary.totalProfit<0?'balance-negative':summary.totalProfit>0?'balance-positive':'balance-zero'):'')+'">'+value+'</strong></div>').join('')+'</div></div>':'';
+    const selected=people[personal?.id];
+    const visibleBowlers=canViewSummary?data.bowlers:selected?[selected]:[];
+    const visibleAwards=canViewSummary?(data.awards||[]):(personal?.winnings||[]);
     const score = (b,g) => b.scores?.['g'+g] == null ? '—' : esc(Number(b.scores['g'+g]) + Number(b.handicap || 0));
     const scoreboard = '<div class="card"><h2>Scores with handicap</h2><div class="table-wrap"><table><thead><tr><th>Bowler</th><th>Game 1</th><th>Game 2</th><th>Game 3</th></tr></thead><tbody>' +
-      data.bowlers.map(b => '<tr><td>' + esc(b.name) + '</td>' + [1,2,3].map(g => '<td>' + score(b,g) + '</td>').join('') + '</tr>').join('') +
+      visibleBowlers.map(b => '<tr><td>' + esc(b.name) + '</td>' + [1,2,3].map(g => '<td>' + score(b,g) + '</td>').join('') + '</tr>').join('') +
       '</tbody></table></div></div>';
-    const payoutTotals=Object.values((data.awards||[]).reduce((totals,award)=>{
+    const payoutTotals=Object.values(visibleAwards.reduce((totals,award)=>{
       const key=award.name||'Bowler';
       totals[key]??={name:key,amount:0};totals[key].amount+=Number(award.amount||0);return totals;
     },{})).sort((a,b)=>a.name.localeCompare(b.name));
@@ -198,11 +202,11 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       ? '<div class="table-wrap"><table><thead><tr><th>Bowler</th><th class="money">Total winnings</th></tr></thead><tbody>'+
         payoutTotals.map(a => '<tr><td>' + esc(a.name) + '</td><td class="money balance-positive">' + dollars(a.amount) + '</td></tr>').join('') + '</tbody></table></div>'
       : '<p>Results are pending.</p>') + '</div>';
-    const pairs = '<div class="card"><h2>Doubles teams</h2><ul>' + (data.pairs || []).map(ids =>
+    const pairs = '<div class="card"><h2>Doubles teams</h2><ul>' + (data.pairs || []).filter(ids=>canViewSummary||ids.includes(selected?.id)).map(ids =>
       '<li>' + ids.map(id => esc(people[id]?.name || 'Bowler')).join(' &amp; ') + '</li>').join('') + '</ul></div>';
     const bracketCards = bowlerId => ['hdcp','scratch'].map(type => {
       const entries=(data.brackets?.[type]||[]).map((ids,index)=>({ids,index}))
-        .filter(entry=>!bowlerId||entry.ids.includes(bowlerId));
+        .filter(entry=>canViewSummary||!!bowlerId&&entry.ids.includes(bowlerId));
       return '<div class="card"><h2>'+(type==='hdcp'?'Handicap':'Scratch')+' brackets</h2>'+
         (entries.length?entries.map(entry=>'<div class="bracket-scroll">'+
           window.BowlingApp.bracketGraphic(entry.ids,type,data.bowlers,entry.index)+'</div>').join(''):
@@ -218,19 +222,17 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       return '<div id="balanceCard" class="card"><h2>Your balance — ' + esc(personal.name) + '</h2><h3>Entry charges</h3><ul>' + charges + '</ul><p><strong>Total charges: ' + dollars(personal.due) + '</strong> · Paid: '+(personal.paid?'Yes':'No')+' · Outstanding: '+dollars(personal.outstanding??(personal.paid?0:personal.due))+'</p><h3>Winnings</h3><ul>' + winnings + '</ul><p><strong>Total won: ' + dollars(personal.won) + '</strong></p><p class="' + balanceClass + '"><strong>Current balance: ' + dollars(settlement) + '</strong></p></div>';
     };
     let finances=financeCard(personal);
-    const progress=(data.matchups||[]).map((round,i)=>'<div class="card"><h2>Game '+(i+1)+' matchups</h2>'+
+    const progress=(data.matchups||[]).map(round=>round.filter(x=>canViewSummary||x.id===selected?.id)).map((round,i)=>'<div class="card"><h2>Game '+(i+1)+' matchups</h2>'+
       (round.length?'<ul class="matchup-list">'+round.map(x=>'<li><strong>'+esc(x.name)+' ('+x.opponents.length+')</strong>: '+x.opponents.map(esc).join(', ')+'</li>').join('')+'</ul>':'<p class="hint">Matchups will appear when the previous game is decided.</p>')+
-      ((data.standings?.[i]||[]).length?'<h3>Standings after game '+(i+1)+'</h3><ol>'+data.standings[i].map(x=>'<li>'+esc(x.name)+' — '+esc(x.score)+'</li>').join('')+'</ol>':'')+'</div>').join('');
-    const notify='<div class="card no-print"><h2>Your bowler and notifications</h2><p>Choose your bowler to view the correct balance and only the brackets that include you. Notifications are optional.</p><div class="form-grid"><label>Bowler<select id="notifyBowler">'+data.bowlers.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(b=>'<option value="'+esc(b.id)+'"'+(b.id===personal?.id?' selected':'')+'>'+esc(b.name)+'</option>').join('')+'</select></label><label>Event date<input id="notifyDate" type="date" value="'+esc(context.date||new Date().toLocaleDateString('en-CA'))+'"></label></div><div class="actions"><button id="showBalance" type="button">Show my balance</button><button id="enableNotifications" class="secondary" type="button">Enable notifications</button></div><p id="notifyStatus" class="hint"></p></div>';
-    $('viewerContent').innerHTML = '<nav class="tabs viewer-tabs no-print"><button type="button" data-viewer-tab="results" class="active">Results</button><button type="button" data-viewer-tab="summary">Summary</button></nav><section class="viewer-tab-panel" data-viewer-panel="summary">'+summaryCard+'</section><section class="viewer-tab-panel active" data-viewer-panel="results">' + notify + finances + progress + scoreboard + '<div id="userBrackets">'+bracketCards(personal?.id)+'</div>' + pairs + awards + '</section>';
+      ((data.standings?.[i]||[]).filter(x=>canViewSummary||x.name===selected?.name).length?'<h3>Standings after game '+(i+1)+'</h3><ol>'+data.standings[i].filter(x=>canViewSummary||x.name===selected?.name).map(x=>'<li>'+esc(x.name)+' — '+esc(x.score)+'</li>').join('')+'</ol>':'')+'</div>').join('');
+    const notify='<div class="card no-print"><h2>Your bowler and notifications</h2><p>Choose your bowler to view the correct balance and only the brackets that include you. Notifications are optional.</p><div class="form-grid"><label>Bowler<select id="notifyBowler">'+data.bowlers.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(b=>'<option value="'+esc(b.id)+'"'+(b.id===(personal?.id||context.selectedId)?' selected':'')+'>'+esc(b.name)+'</option>').join('')+'</select></label><label>Event date<input id="notifyDate" type="date" value="'+esc(context.date||new Date().toLocaleDateString('en-CA'))+'"></label></div><div class="actions"><button id="showBalance" type="button">Show my balance</button><button id="enableNotifications" class="secondary" type="button">Enable notifications</button></div><p id="notifyStatus" class="hint"></p></div>';
+    $('viewerContent').innerHTML = (canViewSummary?'<nav class="tabs viewer-tabs no-print"><button type="button" data-viewer-tab="results" class="active">Results</button><button type="button" data-viewer-tab="summary">Summary</button></nav><section class="viewer-tab-panel" data-viewer-panel="summary">'+summaryCard+'</section>':'')+'<section class="viewer-tab-panel active" data-viewer-panel="results">' + notify + finances + ((selected||canViewSummary)?progress + scoreboard + '<div id="userBrackets">'+bracketCards(personal?.id)+'</div>' + pairs + awards:'') + '</section>';
     document.querySelectorAll('[data-viewer-tab]').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('[data-viewer-tab]').forEach(x=>x.classList.toggle('active',x===button));document.querySelectorAll('[data-viewer-panel]').forEach(x=>x.classList.toggle('active',x.dataset.viewerPanel===button.dataset.viewerTab));}));
-    const filterBrackets=bowlerId=>{$('userBrackets').innerHTML=bracketCards(bowlerId);localize();};
-    $('notifyBowler')?.addEventListener('change',()=>filterBrackets($('notifyBowler').value));
+    $('notifyBowler')?.addEventListener('change',()=>{if(!canViewSummary)renderViewer(data,null,{...context,selectedId:$('notifyBowler').value,date:$('notifyDate').value});});
     $('showBalance')?.addEventListener('click',async()=>{
       try {
         const linked=await api('/balance','POST',{competitionId:current?.id,bowlerId:$('notifyBowler').value,sessionId:context.sessionId});
-        $('balanceCard').outerHTML=financeCard(linked.personal);
-        filterBrackets(linked.personal?.id||$('notifyBowler').value);
+        renderViewer(data,linked.personal,{...context,date:$('notifyDate').value});
         $('notifyStatus').textContent='Balance linked to '+$('notifyBowler').selectedOptions[0].textContent+'. Notifications remain off.';localize();
       } catch(error){$('notifyStatus').textContent=error.message;localize();}
     });
@@ -242,8 +244,8 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
         const key=Uint8Array.from(atob(cfg.vapidPublicKey.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
         const subscription=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});
         const linked=await api('/notifications','POST',{competitionId:current?.id,bowlerId:$('notifyBowler').value,eventDate:$('notifyDate').value,sessionId:context.sessionId,subscription});
+        if(linked.personal)renderViewer(data,linked.personal,{...context,date:$('notifyDate').value});
         $('notifyStatus').textContent='Notifications enabled for '+$('notifyBowler').selectedOptions[0].textContent+' on '+$('notifyDate').value+'.';
-        if(linked.personal){$('balanceCard').outerHTML=financeCard(linked.personal);filterBrackets(linked.personal.id);}
         localize();
       } catch(error){$('notifyStatus').textContent=error.message;localize();}
     });
@@ -524,3 +526,4 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     notice((error?.message || 'Session expired.') + ' Use Log in to continue.');
   });
 })();
+
