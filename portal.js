@@ -159,6 +159,14 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     const competition = rows.find(c => c.id === id);
     if (!competition) throw new Error('Competition is not available.');
     if (competition.name.trim().toLocaleLowerCase() === 'de la rosa masters') {
+      // Finish any pending auth refresh before navigating so the tournament page
+      // can reuse this session without presenting a second sign-in form.
+      if(user){
+        const restored=await client.auth.getSession();
+        if(restored.error||!restored.data?.user)throw restored.error||new Error('Session expired. Sign in again.');
+        const currentToken=await client.auth.token();
+        if(currentToken.error||!currentToken.data?.token)throw currentToken.error||new Error('Session expired. Sign in again.');
+      }
       location.href = '/DeLaRosaMasters/';
       return;
     }

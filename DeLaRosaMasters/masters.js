@@ -9,6 +9,7 @@ const TITLES={satEarly:'Handicap Saturday Brackets · Games 1–3',satLate:'Hand
 const SCRATCH_KEYS=new Set(['scratchEarly','scratchLate','scratchSunday']);
 const SATURDAY_KEYS=['satEarly','satLate','scratchEarly','scratchLate'],SUNDAY_KEYS=['sunday','scratchSunday'];
 const ES={
+  'Opening tournament':'Abriendo torneo','Checking your Brackets session…':'Verificando su sesión de Brackets…',
   'Manager access':'Acceso de Managers','Assign registered Managers to De La Rosa Masters from your SuperAdmin dashboard.':'Asigne Managers registrados a De La Rosa Masters desde su panel de SuperAdmin.','Manage tournament access':'Administrar acceso al torneo',
   'Handicap Saturday Brackets · Games 1–3':'Brackets con hándicap del sábado · Juegos 1–3','Handicap Saturday Brackets · Games 2–4':'Brackets con hándicap del sábado · Juegos 2–4','Handicap Sunday Brackets · Games 1–3':'Brackets con hándicap del domingo · Juegos 1–3','Scratch Saturday Brackets · Games 1–3':'Brackets scratch del sábado · Juegos 1–3','Scratch Saturday Brackets · Games 2–4':'Brackets scratch del sábado · Juegos 2–4','Scratch Sunday Brackets · Games 1–3':'Brackets scratch del domingo · Juegos 1–3','1st':'1.º','2nd':'2.º',
   'Saturday / Sunday results':'Resultados sábado / domingo','Generate Sunday brackets only':'Generar solamente brackets del domingo','Sunday generation keeps all Saturday brackets and results unchanged.':'La generación del domingo conserva sin cambios todos los brackets y resultados del sábado.','A tied matchup is decided by the next available game on the same day.':'Un empate se decide con el siguiente juego disponible del mismo día.','Saturday results':'Resultados del sábado','Sunday results':'Resultados del domingo','Daily payout summary':'Resumen de pagos del día','First places':'Primeros lugares','Second places':'Segundos lugares','High Game payout':'Pago de Línea Alta','No completed payouts yet.':'Aún no hay pagos completados.','Doubles spans all seven games and remains in the full Reports & payouts summary.':'Parejas Virtuales abarca los siete juegos y permanece en el resumen completo de Reportes y pagos.','Lock Saturday scores':'Bloquear puntuaciones del sábado','Saturday scores locked':'Puntuaciones del sábado bloqueadas','Saturday games 1–4 and their brackets are permanently protected. Only Sunday scores can be added.':'Los juegos 1–4 del sábado y sus brackets están protegidos permanentemente. Solo se pueden agregar puntuaciones del domingo.',
@@ -27,7 +28,7 @@ let client=newClient(),user=null,role='user',competition=null,state=fresh(),edit
 async function resetExpiredSession(){if(!needsSessionReset)return;try{await client.auth.signOut();}catch{}client=newClient();user=null;needsSessionReset=false;translate();}
 async function token(){let r=await client.auth.token();if(r.error||!r.data?.token){const restored=await client.auth.getSession();if(restored.data?.user){user=restored.data.user;r=await client.auth.token();}}if(r.error||!r.data?.token)throw new Error('Session expired. Log in again.');return r.data.token;}
 async function api(path,method='GET',body){const auth=user?{'authorization':'Bearer '+await token()}:{};const r=await fetch(cfg.apiUrl+path,{method,headers:{'content-type':'application/json',...auth},body:body===undefined?undefined:JSON.stringify(body)}),data=await r.json();if(!r.ok)throw new Error(data.error||'Request failed');return data;}
-function show(which){['authView','setupView','managerView','viewerView'].forEach(x=>$(x).classList.toggle('hidden',x!==which));}
+function show(which){['loadingView','authView','setupView','managerView','viewerView'].forEach(x=>$(x).classList.toggle('hidden',x!==which));}
 function notice(s,error=false){$('notice').textContent=s;$('notice').classList.toggle('hidden',!s);$('notice').style.borderColor=error?'#bd2436':'';}
 function maxBrackets(bowlers,prop){const pool=bowlers.map(b=>({id:b.id,limit:Math.max(0,Math.floor(Number(b.events?.[prop])||0)),assigned:0}));if(pool.filter(x=>x.limit).length<8)return 0;let low=0,high=Math.floor(pool.reduce((n,x)=>n+x.limit,0)/8);while(low<high){const mid=Math.ceil((low+high)/2);if(pool.reduce((n,x)=>n+Math.min(x.limit,mid),0)>=8*mid)low=mid;else high=mid-1;}return low;}
 const pairKey=(a,b)=>[a,b].sort().join('|');
@@ -127,7 +128,22 @@ $('printSaturdayPayouts').addEventListener('click',()=>printDayPayouts('saturday
 $('printSundayPayouts').addEventListener('click',()=>printDayPayouts('sunday'));
 $('printBracketResults').addEventListener('click',printBracketResults);
 
-(async()=>{translate();try{const r=await client.auth.getSession();await identify(r.data?.user);}catch(e){user=null;needsSessionReset=true;notice('Session expired. Log in again.',true);show('authView');translate();}})();
+async function restoreBracketsSession(){
+  // A navigation can happen immediately after Neon refreshes its cookie. Give that
+  // persisted session a brief chance to become visible before showing another login.
+  for(let attempt=0;attempt<4;attempt++){
+    const restored=await client.auth.getSession();
+    if(restored.error)throw restored.error;
+    if(restored.data?.user){
+      user=restored.data.user;
+      const currentToken=await client.auth.token();
+      if(!currentToken.error&&currentToken.data?.token)return user;
+    }
+    if(attempt<3)await new Promise(resolve=>setTimeout(resolve,150*(attempt+1)));
+  }
+  return null;
+}
+(async()=>{translate();show('loadingView');try{await identify(await restoreBracketsSession());}catch(e){user=null;needsSessionReset=true;notice('Session expired. Log in again.',true);show('authView');translate();}})();
 
 export {fresh,maxBrackets,buildBrackets,bracketResult,rankedAwards};
 

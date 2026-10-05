@@ -18,7 +18,11 @@
   </header>
   <main>
     <p id="notice" class="notice hidden"></p>
-    <section id="authView" class="card auth-card">
+    <section id="loadingView" class="card auth-card">
+      <h2 data-t="Opening tournament">Opening tournament</h2>
+      <p data-t="Checking your Brackets session…">Checking your Brackets session…</p>
+    </section>
+    <section id="authView" class="card auth-card hidden">
       <h2 data-t="Sign in">Sign in</h2>
       <p data-t="Use your Brackets account to enter this tournament.">Use your Brackets account to enter this tournament.</p>
       <form id="loginForm" class="form-grid compact"><label><span data-t="Email">Email</span><input id="email" type="email" autocomplete="username" required></label><label><span data-t="Password">Password</span><input id="password" type="password" autocomplete="current-password" required></label><button data-t="Log in">Log in</button></form>
@@ -57,6 +61,6 @@
     <section id="viewerView" class="hidden"><div id="viewerContent"></div></section>
   </main>
   <script src="../portal-config.js"></script>
-  <script type="module" src="masters.js?v=20261005-admin-summary"></script>
+  <script type="module" src="masters.js?v=20261005-session-reuse"></script>
 </body></html>
 
