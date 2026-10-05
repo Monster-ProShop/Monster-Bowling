@@ -9,6 +9,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
   const show = id => sections.forEach(name => $(name).classList.toggle('hidden', name !== id));
   const localize = () => window.BowlingApp?.translateUI();
   const notice = message => { $('portalNotice').textContent = message;localize(); };
+  const expiredNoticeVisible = () => /session expired|session has expired|sesi[oó]n expir[oó]/i.test($('portalNotice').textContent);
   const fail = error => notice(error?.message || String(error));
   let client, user, role = 'user', admin = false, superAdmin = false, current = null, competitions = [], accessUsers = [], saveJob = null, saving = false, verificationEmail = '', reauth = false, sessionExpired = false, needsSessionReset = false, lastEmail = '';
   const updateAuthButton = () => {
@@ -73,7 +74,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       }
       throw new Error(data.error || 'Request failed');
     }
-    if(user){sessionExpired=false;updateAuthButton();if($('portalNotice').textContent.startsWith('Session expired'))notice('');}
+    if(user){sessionExpired=false;updateAuthButton();if(expiredNoticeVisible())notice('');}
     return data;
   }
 
@@ -172,8 +173,6 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       // Finish any pending auth refresh before navigating so the tournament page
       // can reuse this session without presenting a second sign-in form.
       if(user){
-        const restored=await client.auth.getSession();
-        if(restored.error||!restored.data?.user)throw restored.error||new Error('Session expired. Sign in again.');
         const handoffToken=await activeToken();
         sessionStorage.setItem('dlr-auth-handoff',JSON.stringify({token:handoffToken,user,createdAt:Date.now()}));
       }
