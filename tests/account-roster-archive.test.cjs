@@ -20,6 +20,9 @@ test('permanent roster import preview, apply, undo and claims are wired',()=>{
   assert.match(migration,/create table if not exists public\.bowling_roster_profiles/);
   assert.match(migration,/unique\(competition_id,claimed_user_id\)/);
   assert.match(indexHtml,/Download Excel roster template/);
+  assert.match(portal,/\['Bowler First Name','Bowler Last Name','Handicap'\]/);
+  assert.match(backend,/Both Bowler First Name and Bowler Last Name are required/);
+  assert.match(backend,/Every imported bowler must include a first and last name/);
 });
 test('archive defaults to current year and old bracket detail is purged without finances',()=>{
   assert.match(backend,/extract\(year from session_date\)=extract\(year from current_date\)/);
