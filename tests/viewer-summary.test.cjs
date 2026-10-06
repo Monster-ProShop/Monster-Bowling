@@ -29,7 +29,7 @@ test('Masters viewer keeps only selected bowler results and no summary tab',()=>
  const source=fs.readFileSync(root+'/DeLaRosaMasters/masters.js','utf8');
  const render=source.slice(source.indexOf('function renderViewer('),source.indexOf('\nfunction render(){'));
  const elements=new Map();const $=id=>{if(!elements.has(id))elements.set(id,{innerHTML:'',addEventListener(){}});return elements.get(id)};
- const context=vm.createContext({$,document:{querySelectorAll:()=>[]},NAME:'De La Rosa Masters',viewerDay:'summary',tr:x=>x,esc:x=>String(x??''),money:n=>'$'+n/100,translate(){},SATURDAY_KEYS:['satEarly'],SUNDAY_KEYS:['sunday'],TITLES:{satEarly:'Saturday bracket',sunday:'Sunday bracket'},viewerDiagram:ids=>ids.join(','),dayFinancial:()=>({due:100,won:200,outstanding:0,paid:true,settlement:200,charges:[],winnings:[]})});
+ const context=vm.createContext({$,document:{querySelectorAll:()=>[]},tournamentName:'De La Rosa Masters',viewerDay:'summary',tr:x=>x,esc:x=>String(x??''),money:n=>'$'+n/100,translate(){},SATURDAY_KEYS:['satEarly'],SUNDAY_KEYS:['sunday'],TITLES:{satEarly:'Saturday bracket',sunday:'Sunday bracket'},viewerDiagram:ids=>ids.join(','),dayFinancial:()=>({due:100,won:200,outstanding:0,paid:true,settlement:200,charges:[],winnings:[]})});
  vm.runInContext(render,context);
  const data={bowlers:[{id:'a',name:'Selected',handicap:0,scores:[100,101,102,103,104,105,106]},{id:'b',name:'Unrelated',handicap:0,scores:[200,201,202,203,204,205,206]}],brackets:{satEarly:[['a','opponent'],['b','other']],sunday:[]},teams:[['b','other']],summary:{totalIncome:999999}};
  context.renderViewer(data,{id:'a',name:'Selected'},'a');

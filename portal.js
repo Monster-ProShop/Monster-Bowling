@@ -11,7 +11,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
   const notice = message => { $('portalNotice').textContent = message;localize(); };
   const expiredNoticeVisible = () => /session expired|session has expired|sesi[oó]n expir[oó]/i.test($('portalNotice').textContent);
   const fail = error => notice(error?.message || String(error));
-  let client, user, role = 'user', admin = false, superAdmin = false, current = null, competitions = [], accessUsers = [], saveJob = null, saving = false, verificationEmail = '', reauth = false, sessionExpired = false, needsSessionReset = false, lastEmail = '';
+  let client, user, role = 'user', admin = false, superAdmin = false, current = null, competitions = [], accessUsers = [], permanentRoster = [], rosterCompetition = null, pendingRosterPreview = null, saveJob = null, saving = false, verificationEmail = '', reauth = false, sessionExpired = false, needsSessionReset = false, lastEmail = '';
   const updateAuthButton = () => {
     $('portalLogin').textContent = user && !sessionExpired ? 'Log out' : 'Log in';
     $('portalLogin').classList.remove('hidden');
@@ -94,21 +94,27 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     competitions=rows;
     renderCompetitionOptions(rows.filter(c => c.status === 'open'), $('loginCompetition')?.value);
     $('dashboardHeading').textContent = admin ? 'Manage leagues and tournaments' : 'Available leagues and tournaments';
-    $('createCompetition').classList.toggle('hidden', !superAdmin);
+    $('createCompetition').classList.toggle('hidden', !admin);
+    $('bowlerLeagues').classList.toggle('hidden',admin);
     $('usersAccess').classList.toggle('hidden',!superAdmin);
     $('accountEmail').textContent = user.email;
     const sessions=await Promise.all(rows.map(c=>api('/sessions?competition_id='+encodeURIComponent(c.id))));
     $('competitionCards').innerHTML = rows.map((c,i) =>
-      '<article class="card competition-card"><h3>' + esc(c.name||'Unnamed competition') + '</h3><p>' + esc(c.kind) +
+      '<article class="card competition-card" data-competition-search="'+esc([c.name,c.manager_name,c.manager_email,c.country,c.region,c.city,c.bowling_center].filter(Boolean).join(' ').toLowerCase())+'"><h3>' + esc(c.name||'Unnamed competition') + '</h3><p>' + esc(c.kind) +
       ' · ' + esc(c.status) + '</p><button data-open="' + esc(c.id) + '">' +
-      (c.can_manage ? 'Manage current session' : 'View current session') + '</button>'+(superAdmin?'<button type="button" class="danger" data-delete-competition="'+esc(c.id)+'" data-competition-name="'+esc(c.name||'Unnamed competition')+'">Delete league/tournament</button>':'')+'<div class="session-list"><strong>Saved sessions</strong>'+
+      (c.can_manage ? 'Manage current session' : 'View current session') + '</button>'+(c.can_manage?'<button type="button" class="secondary" data-roster="'+esc(c.id)+'">Permanent roster</button><button type="button" class="secondary" data-edit-competition="'+esc(c.id)+'">Edit details</button>':'<button type="button" class="danger" data-remove-league="'+esc(c.id)+'">Remove from my dashboard</button>')+((superAdmin||c.owner_user_id===user.id)?'<button type="button" class="danger" data-delete-competition="'+esc(c.id)+'" data-competition-name="'+esc(c.name||'Unnamed competition')+'">Delete league/tournament</button>':'')+'<div class="session-list"><strong>Saved sessions · '+new Date().getFullYear()+'</strong>'+
       (sessions[i].length?sessions[i].map(x=>'<div class="session-row"><span>'+esc(x.label)+'<br><small>'+esc(String(x.session_date).slice(0,10))+'</small></span><button class="secondary" data-session="'+esc(x.id)+'">View</button></div>').join(''):'<p class="hint">No saved sessions yet.</p>')+
-      '</div></article>'
+      '<button type="button" class="secondary" data-previous="'+esc(c.id)+'">View previous years</button><div data-previous-list="'+esc(c.id)+'"></div></div></article>'
     ).join('') || '<p>No competitions are available yet.</p>';
     if(superAdmin)await loadUsers();
     show('portalDashboard');
+    if(!admin)await searchDirectory();
     localize();
   }
+  function profileForName(name){return permanentRoster.find(p=>p.active&&p.name.localeCompare(name,undefined,{sensitivity:'base'})===0)||null;}
+  async function loadPermanentRoster(competitionId){permanentRoster=await api('/roster?competition_id='+encodeURIComponent(competitionId));$('leagueRosterNames').innerHTML=permanentRoster.filter(p=>p.active).map(p=>'<option value="'+esc(p.name)+'"></option>').join('');return permanentRoster;}
+  async function openRosterManager(competitionId){rosterCompetition=competitions.find(c=>c.id===competitionId);await loadPermanentRoster(competitionId);const imports=await api('/roster/imports?competition_id='+encodeURIComponent(competitionId));$('rosterManagerTitle').textContent='Permanent roster — '+rosterCompetition.name;$('permanentRosterTable').innerHTML='<div class="table-wrap"><table><thead><tr><th>Player ID</th><th>Name</th><th>Email</th><th>Handicap</th><th>Status</th><th>Account link</th></tr></thead><tbody>'+permanentRoster.map(p=>'<tr><td>'+esc(p.membership_number||p.id)+'</td><td>'+esc(p.name)+'</td><td>'+esc(p.email||'')+'</td><td>'+esc(p.handicap)+'</td><td>'+(p.active?'Active':'Inactive')+'</td><td>'+(p.claimed_user_id?'Linked <button class="secondary" data-reset-profile="'+esc(p.id)+'">Reset</button>':'Not linked')+'</td></tr>').join('')+'</tbody></table></div>'+(imports.length?'<h3>Import history</h3><ul>'+imports.map(x=>'<li>'+esc(x.file_name||'Roster import')+' · '+esc(String(x.created_at).slice(0,10))+(x.undone_at?' · Undone':'')+'</li>').join('')+'</ul>':'<p class="hint">No roster imports yet.</p>');$('rosterManager').classList.remove('hidden');$('rosterManager').scrollIntoView({behavior:'smooth'});}
+  async function searchDirectory(){const q=$('leagueDirectorySearch').value.trim(),rows=await api('/directory?q='+encodeURIComponent(q));const mine=new Set(competitions.map(c=>c.id));$('leagueDirectoryResults').innerHTML=rows.map(c=>'<article class="card"><strong>'+esc(c.name)+'</strong><p>'+[c.bowling_center,c.city,c.region,c.country].filter(Boolean).map(esc).join(' · ')+'</p><button type="button" data-add-league="'+esc(c.id)+'" '+(mine.has(c.id)?'disabled':'')+'>'+(mine.has(c.id)?'Added':'Add to my dashboard')+'</button></article>').join('')||'<p>No matching leagues.</p>';}
   async function loadUsers() {
     if(!superAdmin)return;
     accessUsers=await api('/users');
@@ -169,14 +175,14 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     const rows = await listCompetitions();
     const competition = rows.find(c => c.id === id);
     if (!competition) throw new Error('Competition is not available.');
-    if (competition.name.trim().toLocaleLowerCase() === 'de la rosa masters') {
+    if (competition.format==='delarosa'||competition.name.trim().toLocaleLowerCase() === 'de la rosa masters') {
       // Finish any pending auth refresh before navigating so the tournament page
       // can reuse this session without presenting a second sign-in form.
       if(user){
         const handoffToken=await activeToken();
         sessionStorage.setItem('dlr-auth-handoff',JSON.stringify({token:handoffToken,user,createdAt:Date.now()}));
       }
-      location.href = '/DeLaRosaMasters/';
+      location.href = '/DeLaRosaMasters/?competition='+encodeURIComponent(competition.id);
       return;
     }
     current = competition;
@@ -184,6 +190,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     $('viewerCompetition').textContent = competition.name;
     $('printSavedSession').classList.add('hidden');
     if (competition.can_manage) {
+      await loadPermanentRoster(id);
       const state = await api('/state?id=' + encodeURIComponent(id));
       window.BowlingApp.setState(state?.bowlers ? state : window.BowlingApp.fresh());
       show('managerApp');
@@ -242,12 +249,14 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     const progress=(data.matchups||[]).map(round=>round.filter(x=>canViewSummary||x.id===selected?.id)).map((round,i)=>'<div class="card"><h2>Game '+(i+1)+' matchups</h2>'+
       (round.length?'<ul class="matchup-list">'+round.map(x=>'<li><strong>'+esc(x.name)+' ('+x.opponents.length+')</strong>: '+x.opponents.map(esc).join(', ')+'</li>').join('')+'</ul>':'<p class="hint">Matchups will appear when the previous game is decided.</p>')+
       ((data.standings?.[i]||[]).filter(x=>canViewSummary||x.name===selected?.name).length?'<h3>Standings after game '+(i+1)+'</h3><ol>'+data.standings[i].filter(x=>canViewSummary||x.name===selected?.name).map(x=>'<li>'+esc(x.name)+' — '+esc(x.score)+'</li>').join('')+'</ol>':'')+'</div>').join('');
-    const notify='<div class="card no-print"><h2>Your bowler and notifications</h2><p>Choose your bowler to view the correct balance and only the brackets that include you. Notifications are optional.</p><div class="form-grid"><label>Bowler<select id="notifyBowler">'+data.bowlers.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(b=>'<option value="'+esc(b.id)+'"'+(b.id===(personal?.id||context.selectedId)?' selected':'')+'>'+esc(b.name)+'</option>').join('')+'</select></label><label>Event date<input id="notifyDate" type="date" value="'+esc(context.date||new Date().toLocaleDateString('en-CA'))+'"></label></div><div class="actions"><button id="showBalance" type="button">Show my balance</button><button id="enableNotifications" class="secondary" type="button">Enable notifications</button></div><p id="notifyStatus" class="hint"></p></div>';
+    const notify='<div class="card no-print"><h2>Your bowler and notifications</h2><p>Choose your bowler once for this league. Confirming links this account until a Manager resets it. Notifications are optional.</p><div class="form-grid"><label>Bowler<select id="notifyBowler"'+(personal?' disabled':'')+'>'+data.bowlers.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(b=>'<option value="'+esc(b.id)+'"'+(b.id===(personal?.id||context.selectedId)?' selected':'')+'>'+esc(b.name)+'</option>').join('')+'</select></label><label>Event date<input id="notifyDate" type="date" value="'+esc(context.date||new Date().toLocaleDateString('en-CA'))+'"></label></div><div class="actions"><button id="showBalance" type="button">Show my balance</button><button id="enableNotifications" class="secondary" type="button">Enable notifications</button></div><p id="notifyStatus" class="hint"></p></div>';
     $('viewerContent').innerHTML = (canViewSummary?'<nav class="tabs viewer-tabs no-print"><button type="button" data-viewer-tab="results" class="active">Results</button><button type="button" data-viewer-tab="summary">Summary</button></nav><section class="viewer-tab-panel" data-viewer-panel="summary">'+summaryCard+'</section>':'')+'<section class="viewer-tab-panel active" data-viewer-panel="results">' + notify + finances + ((selected||canViewSummary)?progress + scoreboard + '<div id="userBrackets">'+bracketCards(personal?.id)+'</div>' + pairs + awards:'') + '</section>';
     document.querySelectorAll('[data-viewer-tab]').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('[data-viewer-tab]').forEach(x=>x.classList.toggle('active',x===button));document.querySelectorAll('[data-viewer-panel]').forEach(x=>x.classList.toggle('active',x.dataset.viewerPanel===button.dataset.viewerTab));}));
     $('notifyBowler')?.addEventListener('change',()=>{if(!canViewSummary)renderViewer(data,null,{...context,selectedId:$('notifyBowler').value,date:$('notifyDate').value});});
     $('showBalance')?.addEventListener('click',async()=>{
       try {
+        const selectedBowler=data.bowlers.find(b=>b.id===$('notifyBowler').value),profiles=await api('/roster?competition_id='+encodeURIComponent(current?.id)),profile=profiles.find(p=>p.id===selectedBowler?.id||String(p.email||'').toLowerCase()===String(selectedBowler?.email||'').toLowerCase()||p.name.localeCompare(selectedBowler?.name||'',undefined,{sensitivity:'base'})===0);
+        if(profile&&!personal){if(!confirm('Confirm that you are '+selectedBowler.name+'. This profile can only be changed by a Manager.'))return;await api('/roster/claim','POST',{competitionId:current.id,profileId:profile.id,confirm:true});}
         const linked=await api('/balance','POST',{competitionId:current?.id,bowlerId:$('notifyBowler').value,sessionId:context.sessionId});
         renderViewer(data,linked.personal,{...context,date:$('notifyDate').value});
         $('notifyStatus').textContent='Balance linked to '+$('notifyBowler').selectedOptions[0].textContent+'. Notifications remain off.';localize();
@@ -335,14 +344,14 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
   }
   async function createCompetition(event) {
     event.preventDefault();
-    const name = $('competitionName').value.trim(), kind = $('competitionKind').value;
+    const name = $('competitionName').value.trim(), kind = $('competitionKind').value,format=$('competitionFormat').value;
     if (!name) return;
-    const data = await api('/competitions','POST',{name,kind});
+    const data = await api('/competitions','POST',{name,kind,format,managerName:$('competitionManagerName').value,country:$('competitionCountry').value,region:$('competitionRegion').value,city:$('competitionCity').value,bowlingCenter:$('competitionCenter').value});
     $('createCompetition').reset();
     await openCompetition(data.id);
   }
   async function deleteCompetition(button) {
-    if(!superAdmin)throw new Error('SuperAdmin only');
+    if(!admin)throw new Error('Manager access required');
     const name=button.dataset.competitionName||'Unnamed competition';
     const message='Permanently delete '+name+' and all of its sessions, bowlers, brackets, scores, payouts and manager assignments? This cannot be undone.';
     if(!confirm(window.BowlingApp?.translateText(message)||message))return;
@@ -381,7 +390,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     document.querySelector('[data-tab="registration"]').click();
     notice('A new blank session is ready.');return {started:true};
   }
-  window.MonsterPortal = {persist:queueSave,saveSession,startFresh,flush:flushSaves,saveConfiguration,savePayment};
+  window.MonsterPortal = {persist:queueSave,saveSession,startFresh,flush:flushSaves,saveConfiguration,savePayment,profileForName};
 
   async function boot() {
     if (!cfg.url || !cfg.apiUrl) {
@@ -412,6 +421,8 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
         $('loginPassword').value = '';
         user = data.user;
         await activeToken();
+        const requestedType=localStorage.getItem('pending-account-type');
+        if(requestedType){await api('/account/setup','POST',{accountType:requestedType});localStorage.removeItem('pending-account-type');}
         await identify(data.user);
       } catch (error) { fail(error); }
     });
@@ -454,6 +465,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       event.preventDefault();
       try {
         const email = $('registerEmail').value.trim().toLowerCase();
+        localStorage.setItem('pending-account-type',new FormData(event.currentTarget).get('accountType')||'user');
         const {data,error} = await client.auth.signUp.email({email,password:$('registerPassword').value,
           name:email.split('@')[0] || 'Bowler'});
         if (error) throw error;
@@ -512,9 +524,22 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       if(remove){void deleteCompetition(remove).catch(fail);return;}
       const button = event.target.closest('[data-open]');
       if (button) void openCompetition(button.dataset.open).catch(fail);
+      const roster=event.target.closest('[data-roster]');if(roster)void openRosterManager(roster.dataset.roster).catch(fail);
+      const editCompetition=event.target.closest('[data-edit-competition]');if(editCompetition)void (async()=>{const c=competitions.find(x=>x.id===editCompetition.dataset.editCompetition),name=prompt('Competition name',c.name);if(!name)return;const country=prompt('Country',c.country||'')??c.country,region=prompt('State / Region',c.region||'')??c.region,city=prompt('City',c.city||'')??c.city,bowlingCenter=prompt('Bowling center',c.bowling_center||'')??c.bowling_center;await api('/competitions/edit','POST',{competitionId:c.id,name,kind:c.kind,country,region,city,bowlingCenter});await refreshDashboard();})().catch(fail);
+      const removeLeague=event.target.closest('[data-remove-league]');if(removeLeague)void api('/memberships','DELETE',{competitionId:removeLeague.dataset.removeLeague}).then(refreshDashboard).catch(fail);
+      const previous=event.target.closest('[data-previous]');if(previous)void (async()=>{const rows=await api('/sessions?competition_id='+encodeURIComponent(previous.dataset.previous)+'&all=1'),currentYear=new Date().getFullYear(),older=rows.filter(x=>Number(String(x.session_date).slice(0,4))!==currentYear),groups=Object.groupBy?Object.groupBy(older,x=>String(x.session_date).slice(0,4)):older.reduce((o,x)=>((o[String(x.session_date).slice(0,4)]??=[]).push(x),o),{});document.querySelector('[data-previous-list="'+previous.dataset.previous+'"]').innerHTML=Object.entries(groups).sort((a,b)=>b[0]-a[0]).map(([year,list])=>'<h4>'+esc(year)+'</h4>'+list.map(x=>'<div class="session-row"><span>'+esc(x.label)+'<br><small>'+esc(String(x.session_date).slice(0,10))+(x.bracket_details_purged_at?' · Financial archive':'')+'</small></span><button class="secondary" data-session="'+esc(x.id)+'">View</button></div>').join('')).join('')||'<p class="hint">No previous years.</p>';})().catch(fail);
       const session = event.target.closest('[data-session]');
       if (session) void openSavedSession(session.dataset.session).catch(fail);
     });
+    $('leagueDirectorySearch').addEventListener('input',()=>void searchDirectory().catch(fail));
+    $('leagueDirectoryResults').addEventListener('click',event=>{const button=event.target.closest('[data-add-league]');if(!button)return;void api('/memberships','POST',{competitionId:button.dataset.addLeague}).then(refreshDashboard).catch(fail);});
+    $('closeRosterManager').addEventListener('click',()=>$('rosterManager').classList.add('hidden'));
+    $('permanentRosterTable').addEventListener('click',event=>{const button=event.target.closest('[data-reset-profile]');if(!button)return;void api('/roster/reset-claim','POST',{competitionId:rosterCompetition.id,profileId:button.dataset.resetProfile}).then(()=>openRosterManager(rosterCompetition.id)).catch(fail);});
+    $('downloadRosterTemplate').addEventListener('click',()=>{if(!window.XLSX)return fail(new Error('Excel tools are still loading.'));const rows=[['Membership Number','Name','Email','Handicap','Active'],['10001','Example Bowler','bowler@example.com',15,'Yes']],sheet=XLSX.utils.aoa_to_sheet(rows),book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,sheet,'Roster');XLSX.writeFile(book,'BracketsByProDrillOS_Roster_Template.xlsx');});
+    $('rosterUpload').addEventListener('change',event=>void (async()=>{const file=event.target.files[0];if(!file||!rosterCompetition)return;const book=XLSX.read(await file.arrayBuffer(),{type:'array'}),raw=XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]],{defval:''}),rows=raw.map(x=>({membershipNumber:x['Membership Number']||x.membershipNumber,name:x.Name||x.name,email:x.Email||x.email,handicap:x.Handicap||x.handicap,active:!/^no|false|inactive$/i.test(String(x.Active??x.active??'yes'))}));pendingRosterPreview=await api('/roster/import-preview','POST',{competitionId:rosterCompetition.id,rows});const counts=pendingRosterPreview.preview.reduce((o,x)=>(o[x.status]=(o[x.status]||0)+1,o),{});$('rosterImportPreview').innerHTML='<h3>Import preview</h3><p>'+Object.entries(counts).map(([k,v])=>esc(k)+': '+v).join(' · ')+'</p><button id="applyRosterImport" type="button">Apply roster import</button>';event.target.dataset.fileName=file.name;})().catch(fail));
+    $('rosterImportPreview').addEventListener('click',event=>{if(event.target.id!=='applyRosterImport'||!pendingRosterPreview)return;void api('/roster/import','POST',{competitionId:rosterCompetition.id,fileName:$('rosterUpload').dataset.fileName,rows:pendingRosterPreview.preview}).then(()=>{pendingRosterPreview=null;$('rosterImportPreview').innerHTML='<p>Roster import saved.</p>';return openRosterManager(rosterCompetition.id);}).catch(fail);});
+    $('undoRosterImport').addEventListener('click',()=>{if(!rosterCompetition||!confirm('Undo the most recent roster import?'))return;void api('/roster/import-undo','POST',{competitionId:rosterCompetition.id}).then(()=>openRosterManager(rosterCompetition.id)).catch(fail);});
+    $('name').addEventListener('change',()=>{const p=profileForName($('name').value);if(!p)return;$('membershipNumber').value=p.membership_number||'';$('bowlerEmail').value=p.email||'';$('handicap').value=p.handicap;});
     $('userAccessRows').addEventListener('change',event=>{
       const select=event.target.closest('[data-user-role]');if(!select)return;
       select.closest('[data-user]').querySelectorAll('[data-assignment]').forEach(input=>input.disabled=select.value!=='manager');
@@ -523,6 +548,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     $('userEmailSearch').addEventListener('input',searchAccessUsers);
     $('userEmailSearch').addEventListener('change',searchAccessUsers);
     $('userSearchResults').addEventListener('click',event=>{const button=event.target.closest('[data-pick-user]');if(!button)return;const account=accessUsers.find(item=>item.id===button.dataset.pickUser);if(!account)return;$('userEmailSearch').value=account.email;$('userSearchResults').innerHTML='';renderAccessUser(account);});
+    $('adminCompetitionSearch').addEventListener('input',event=>{const q=event.target.value.trim().toLowerCase();document.querySelectorAll('[data-competition-search]').forEach(card=>card.classList.toggle('hidden',q&&!card.dataset.competitionSearch.includes(q)));});
     $('createCompetition').addEventListener('submit',event => void createCompetition(event).catch(fail));
     const resetParams=new URLSearchParams(location.search),resetToken=resetParams.get('token'),resetError=resetParams.get('error');
     if(resetToken||resetError){

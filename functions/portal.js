@@ -63,6 +63,38 @@ async function canManage(actor,competitionId) {
   const result=await pool.query('select 1 from public.bowling_manager_assignments where user_id=$1 and competition_id=$2',[actor.id,competitionId]);
   return !!result.rowCount;
 }
+async function canAccess(actor,competitionId){
+  if(await canManage(actor,competitionId))return true;
+  return !!(await pool.query('select 1 from public.bowling_memberships where user_id=$1 and competition_id=$2',[actor.id,competitionId])).rowCount;
+}
+const cleanText=(value,max=120)=>typeof value==='string'?value.trim().slice(0,max):'';
+const normalizedName=value=>cleanText(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').toLowerCase();
+async function rosterRows(competitionId){return (await pool.query(`select id,competition_id,membership_number,name,email,handicap,active,claimed_user_id,updated_at
+  from public.bowling_roster_profiles where competition_id=$1 order by active desc,lower(name)`,[competitionId])).rows;}
+async function ensureRosterProfiles(db,competitionId,bowlers=[]){
+  for(const b of bowlers){
+    const name=cleanText(b.name),email=cleanText(b.email,254).toLowerCase()||null,membership=cleanText(b.membershipNumber||b.membership_number,80)||null;
+    if(!name)continue;
+    let match=null;
+    if(membership)match=(await db.query('select id from public.bowling_roster_profiles where competition_id=$1 and membership_number=$2',[competitionId,membership])).rows[0];
+    if(!match&&email)match=(await db.query('select id from public.bowling_roster_profiles where competition_id=$1 and lower(email)=$2',[competitionId,email])).rows[0];
+    if(!match)match=(await db.query('select id from public.bowling_roster_profiles where competition_id=$1 and lower(name)=$2',[competitionId,normalizedName(name)])).rows[0];
+    if(match)await db.query(`update public.bowling_roster_profiles set membership_number=coalesce($3,membership_number),name=$4,email=coalesce($5,email),handicap=$6,active=true,updated_at=now() where competition_id=$1 and id=$2`,[competitionId,match.id,membership,name,email,Number(b.handicap||0)]);
+    else await db.query(`insert into public.bowling_roster_profiles(competition_id,membership_number,name,email,handicap) values($1,$2,$3,$4,$5)`,[competitionId,membership,name,email,Number(b.handicap||0)]);
+  }
+}
+async function resolveBowlerId(actor,competitionId,state){
+  const bowlers=state?.bowlers||[];
+  let id=bowlers.find(b=>String(b.email||'').toLowerCase()===actor.email)?.id;
+  const profile=(await pool.query(`select * from public.bowling_roster_profiles where competition_id=$1 and
+    (claimed_user_id=$2 or (claimed_user_id is null and lower(email)=$3)) order by claimed_user_id nulls last limit 1`,[competitionId,actor.id,actor.email])).rows[0];
+  if(profile&&!profile.claimed_user_id)await pool.query('update public.bowling_roster_profiles set claimed_user_id=$1,updated_at=now() where id=$2 and claimed_user_id is null',[actor.id,profile.id]);
+  if(!id&&profile)id=bowlers.find(b=>b.id===profile.id||String(b.email||'').toLowerCase()===String(profile.email||'').toLowerCase()||normalizedName(b.name)===normalizedName(profile.name))?.id;
+  if(!id)id=(await pool.query('select bowler_id from public.bowling_user_bowler_links where user_id=$1 and competition_id=$2 limit 1',[actor.id,competitionId])).rows[0]?.bowler_id;
+  if(id)await pool.query(`insert into public.bowling_user_bowler_links(user_id,competition_id,bowler_id) values($1,$2,$3)
+    on conflict(user_id,competition_id) do update set bowler_id=excluded.bowler_id,updated_at=now()`,[actor.id,competitionId,id]);
+  return id;
+}
 async function bodyJson(request) {
   const raw = await request.text();
   if (raw.length > 2_000_000) throw new Error('Request is too large');
@@ -99,18 +131,41 @@ async function handler(request) {
     if(!actor)return response({error:'Sign in first'},401);
     return response({email:actor.email,role:actor.role});
   }
+  if(route==='/account/setup'&&request.method==='POST'){
+    if(!actor)return response({error:'Sign in first'},401);
+    const body=await bodyJson(request),requested=body.accountType;
+    if(!['user','manager'].includes(requested))return response({error:'Choose Bowler or Bracket Manager'},400);
+    if(actor.role!=='superadmin')await pool.query(`insert into public.bowling_user_roles(user_id,role) values($1,$2)
+      on conflict(user_id) do update set role=excluded.role,updated_at=now()`,[actor.id,requested]);
+    return response({saved:true,role:actor.role==='superadmin'?'superadmin':requested});
+  }
   if (route === '/competitions' && request.method === 'GET') {
+    if(!actor)return response([]);
+    const columns='c.id,c.name,c.kind,c.format,c.status,c.country,c.region,c.city,c.bowling_center,c.manager_name,c.manager_email,c.owner_user_id,c.created_at';
     const { rows } = await pool.query(actor?.role==='superadmin'
-      ? 'select id,name,kind,status,created_at,true can_manage from public.bowling_competitions order by created_at desc'
+      ? `select ${columns},true can_manage from public.bowling_competitions c order by c.created_at desc`
       : actor?.role==='manager'
-        ? `select c.id,c.name,c.kind,c.status,c.created_at,(a.user_id is not null) can_manage from public.bowling_competitions c
-           left join public.bowling_manager_assignments a on a.competition_id=c.id and a.user_id=$1
-           where c.status='open' order by c.created_at desc`
-        : "select id,name,kind,status,created_at,false can_manage from public.bowling_competitions where status='open' order by created_at desc",
-      actor?.role==='manager'?[actor.id]:[]);
+        ? `select ${columns},true can_manage from public.bowling_competitions c left join public.bowling_manager_assignments a on a.competition_id=c.id and a.user_id=$1
+           where c.status='open' and (c.owner_user_id=$1 or a.user_id=$1) order by c.created_at desc`
+        : `select ${columns},false can_manage from public.bowling_competitions c join public.bowling_memberships m on m.competition_id=c.id and m.user_id=$1
+           where c.status='open' order by c.created_at desc`,actor.role==='superadmin'?[]:[actor.id]);
     return response(rows);
   }
   if (!actor) return response({ error: 'Sign in and verify your email first' }, 401);
+  if(route==='/directory'&&request.method==='GET'){
+    const q='%'+cleanText(url.searchParams.get('q')||'',120).toLowerCase()+'%';
+    const {rows}=await pool.query(`select id,name,kind,format,country,region,city,bowling_center from public.bowling_competitions
+      where status='open' and (lower(name) like $1 or lower(coalesce(country,'')) like $1 or lower(coalesce(region,'')) like $1 or lower(coalesce(city,'')) like $1 or lower(coalesce(bowling_center,'')) like $1)
+      order by lower(name) limit 100`,[q]);return response(rows);
+  }
+  if(route==='/memberships'&&request.method==='POST'){
+    const body=await bodyJson(request);if(!uuid.test(String(body.competitionId)))return response({error:'Invalid competition'},400);
+    await pool.query('insert into public.bowling_memberships(competition_id,user_id) values($1,$2) on conflict do nothing',[body.competitionId,actor.id]);return response({saved:true});
+  }
+  if(route==='/memberships'&&request.method==='DELETE'){
+    const body=await bodyJson(request);if(!uuid.test(String(body.competitionId)))return response({error:'Invalid competition'},400);
+    await pool.query('delete from public.bowling_memberships where competition_id=$1 and user_id=$2',[body.competitionId,actor.id]);return response({deleted:true});
+  }
   if(route==='/users'&&request.method==='GET') {
     if(actor.role!=='superadmin')return response({error:'SuperAdmin only'},403);
     const {rows}=await pool.query(`select u.id,lower(u.email) email,
@@ -142,18 +197,26 @@ async function handler(request) {
       await db.query('commit');return response({saved:true});}catch(error){await db.query('rollback');throw error;}finally{db.release();}
   }
   if (route === '/competitions' && request.method === 'POST') {
-    if (actor.role!=='superadmin') return response({ error: 'SuperAdmin only' }, 403);
+    if (!['manager','superadmin'].includes(actor.role)) return response({ error: 'Bracket Manager account required' }, 403);
     const body = await bodyJson(request);
-    if (typeof body.name !== 'string' || !body.name.trim() || body.name.length > 120 || !['league','tournament'].includes(body.kind))
+    if (typeof body.name !== 'string' || !body.name.trim() || body.name.length > 120 || !['league','tournament'].includes(body.kind)||!['traditional','delarosa'].includes(body.format||'traditional'))
       return response({ error: 'Invalid competition' }, 400);
-    const { rows } = await pool.query('insert into public.bowling_competitions (name,kind) values ($1,$2) returning id',
-      [body.name.trim(),body.kind]);
+    const { rows } = await pool.query(`insert into public.bowling_competitions
+      (name,kind,format,owner_user_id,manager_email,manager_name,country,region,city,bowling_center) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id`,
+      [body.name.trim(),body.kind,body.format||'traditional',actor.id,actor.email,cleanText(body.managerName),cleanText(body.country),cleanText(body.region),cleanText(body.city),cleanText(body.bowlingCenter)]);
+    await pool.query('insert into public.bowling_manager_assignments(user_id,competition_id) values($1,$2) on conflict do nothing',[actor.id,rows[0].id]);
     return response(rows[0],201);
   }
+  if(route==='/competitions/edit'&&request.method==='POST'){
+    const body=await bodyJson(request);if(!uuid.test(String(body.competitionId))||!await canManage(actor,body.competitionId))return response({error:'Manager access required'},403);
+    await pool.query(`update public.bowling_competitions set name=$2,kind=$3,country=$4,region=$5,city=$6,bowling_center=$7,updated_at=now() where id=$1`,
+      [body.competitionId,cleanText(body.name),body.kind==='tournament'?'tournament':'league',cleanText(body.country),cleanText(body.region),cleanText(body.city),cleanText(body.bowlingCenter)]);return response({saved:true});
+  }
   if(route==='/competitions/delete'&&request.method==='POST') {
-    if(actor.role!=='superadmin')return response({error:'SuperAdmin only'},403);
     const body=await bodyJson(request);
     if(!uuid.test(String(body.competitionId)))return response({error:'Invalid competition ID'},400);
+    const own=actor.role==='superadmin'||(await pool.query('select 1 from public.bowling_competitions where id=$1 and owner_user_id=$2',[body.competitionId,actor.id])).rowCount;
+    if(!own)return response({error:'Only the owner or SuperAdmin can delete this competition'},403);
     const {rows}=await pool.query('delete from public.bowling_competitions where id=$1 returning id,name',[body.competitionId]);
     if(!rows.length)return response({error:'Competition not found'},404);
     return response({deleted:true,competition:rows[0]});
@@ -161,23 +224,60 @@ async function handler(request) {
   if (route === '/sessions' && request.method === 'GET') {
     const competitionId = url.searchParams.get('competition_id');
     if (!uuid.test(String(competitionId))) return response({ error: 'Invalid competition ID' }, 400);
-    const { rows } = await pool.query(`select id,label,session_date,created_at from public.bowling_session_archives
-      where competition_id=$1 order by session_date desc,created_at desc`,[competitionId]);
+    if(!await canAccess(actor,competitionId))return response({error:'Competition access required'},403);
+    await pool.query('select public.bowling_cleanup_old_bracket_details()');
+    const all=url.searchParams.get('all')==='1';
+    const { rows } = await pool.query(`select id,label,session_date,created_at,bracket_details_purged_at from public.bowling_session_archives
+      where competition_id=$1 and ($2::boolean or extract(year from session_date)=extract(year from current_date)) order by session_date desc,created_at desc`,[competitionId,all]);
     return response(rows);
+  }
+  if(route==='/roster'&&request.method==='GET'){
+    const competitionId=url.searchParams.get('competition_id');if(!uuid.test(String(competitionId)))return response({error:'Invalid competition'},400);
+    if(!await canAccess(actor,competitionId))return response({error:'Competition access required'},403);
+    const rows=await rosterRows(competitionId),manager=await canManage(actor,competitionId);
+    return response(manager?rows:rows.map(({claimed_user_id,...profile})=>({...profile,claimed:!!claimed_user_id,claimed_by_me:claimed_user_id===actor.id})));
+  }
+  if(route==='/roster/claim'&&request.method==='POST'){
+    const body=await bodyJson(request);if(!uuid.test(String(body.competitionId))||!uuid.test(String(body.profileId))||body.confirm!==true)return response({error:'Confirm the bowler profile selection'},400);
+    const profile=(await pool.query('select * from public.bowling_roster_profiles where id=$1 and competition_id=$2',[body.profileId,body.competitionId])).rows[0];
+    if(!profile)return response({error:'Bowler profile not found'},404);if(profile.claimed_user_id&&profile.claimed_user_id!==actor.id)return response({error:'This bowler profile is already linked'},409);
+    const existingClaim=await pool.query('select id,name from public.bowling_roster_profiles where competition_id=$1 and claimed_user_id=$2 and id<>$3',[body.competitionId,actor.id,body.profileId]);
+    if(existingClaim.rowCount)return response({error:'Your account is already permanently linked to '+existingClaim.rows[0].name+' for this league. Ask a Manager to reset it.'},409);
+    await pool.query('update public.bowling_roster_profiles set claimed_user_id=$1,email=coalesce(email,$4),updated_at=now() where id=$2 and competition_id=$3',[actor.id,body.profileId,body.competitionId,actor.email]);
+    const currentState=(await pool.query('select data from public.bowling_competition_state where competition_id=$1',[body.competitionId])).rows[0]?.data,bowler=(currentState?.bowlers||[]).find(b=>b.id===profile.id||String(b.email||'').toLowerCase()===String(profile.email||'').toLowerCase()||normalizedName(b.name)===normalizedName(profile.name));
+    if(bowler)await pool.query(`insert into public.bowling_user_bowler_links(user_id,competition_id,bowler_id) values($1,$2,$3) on conflict(user_id,competition_id) do update set bowler_id=excluded.bowler_id,updated_at=now()`,[actor.id,body.competitionId,bowler.id]);
+    await pool.query('insert into public.bowling_memberships(competition_id,user_id) values($1,$2) on conflict do nothing',[body.competitionId,actor.id]);return response({linked:true,profile});
+  }
+  if(route==='/roster/reset-claim'&&request.method==='POST'){
+    const body=await bodyJson(request);if(!uuid.test(String(body.competitionId))||!await canManage(actor,body.competitionId))return response({error:'Manager access required'},403);
+    await pool.query('update public.bowling_roster_profiles set claimed_user_id=null,updated_at=now() where id=$1 and competition_id=$2',[body.profileId,body.competitionId]);return response({saved:true});
+  }
+  if(route==='/roster/import-preview'&&request.method==='POST'){
+    const body=await bodyJson(request),competitionId=body.competitionId;if(!uuid.test(String(competitionId))||!await canManage(actor,competitionId))return response({error:'Manager access required'},403);
+    const existing=await rosterRows(competitionId),rows=Array.isArray(body.rows)?body.rows:[],seen=new Set(),preview=[];
+    for(const raw of rows){const membership=cleanText(raw.membershipNumber||raw.membership_number,80),email=cleanText(raw.email,254).toLowerCase(),name=cleanText(raw.name),key=membership?'m:'+membership:email?'e:'+email:'n:'+normalizedName(name);if(!name){preview.push({...raw,status:'duplicate',reason:'Missing name'});continue;}if(seen.has(key)){preview.push({...raw,status:'duplicate'});continue;}seen.add(key);const match=existing.find(p=>membership&&p.membership_number===membership)||existing.find(p=>email&&p.email?.toLowerCase()===email)||existing.find(p=>normalizedName(p.name)===normalizedName(name));const clean={membershipNumber:membership,name,email,handicap:Math.max(0,Math.min(300,Number(raw.handicap||0))),active:raw.active!==false};preview.push({...clean,status:match?(match.name===name&&String(match.email||'')===email&&Number(match.handicap)===clean.handicap&&match.active===clean.active?'unchanged':'updated'):'new',profileId:match?.id});}
+    existing.filter(p=>p.active&&!preview.some(x=>x.profileId===p.id)).forEach(p=>preview.push({profileId:p.id,membershipNumber:p.membership_number,name:p.name,email:p.email,handicap:p.handicap,active:false,status:'deactivated'}));return response({preview});
+  }
+  if(route==='/roster/import'&&request.method==='POST'){
+    const body=await bodyJson(request),competitionId=body.competitionId;if(!uuid.test(String(competitionId))||!await canManage(actor,competitionId)||!Array.isArray(body.rows))return response({error:'Invalid roster import'},400);
+    const db=await pool.connect();try{await db.query('begin');const before=await db.query('select to_jsonb(p) data from public.bowling_roster_profiles p where competition_id=$1',[competitionId]);const applied=body.rows.filter(x=>['new','updated','deactivated'].includes(x.status));for(const row of applied){if(row.status==='deactivated')await db.query('update public.bowling_roster_profiles set active=false,updated_at=now() where id=$1 and competition_id=$2',[row.profileId,competitionId]);else if(row.profileId)await db.query(`update public.bowling_roster_profiles set membership_number=$3,name=$4,email=nullif($5,''),handicap=$6,active=$7,updated_at=now() where id=$1 and competition_id=$2`,[row.profileId,competitionId,cleanText(row.membershipNumber,80)||null,cleanText(row.name),cleanText(row.email,254).toLowerCase(),Number(row.handicap||0),row.active!==false]);else await db.query(`insert into public.bowling_roster_profiles(competition_id,membership_number,name,email,handicap,active) values($1,$2,$3,nullif($4,''),$5,$6)`,[competitionId,cleanText(row.membershipNumber,80)||null,cleanText(row.name),cleanText(row.email,254).toLowerCase(),Number(row.handicap||0),row.active!==false]);}const summary=applied.reduce((o,x)=>(o[x.status]=(o[x.status]||0)+1,o),{});const saved=await db.query(`insert into public.bowling_roster_imports(competition_id,imported_by,file_name,summary,before_snapshot) values($1,$2,$3,$4,$5) returning id`,[competitionId,actor.id,cleanText(body.fileName,240),summary,JSON.stringify(before.rows.map(x=>x.data))]);await db.query('commit');return response({saved:true,importId:saved.rows[0].id,summary});}catch(error){await db.query('rollback');throw error;}finally{db.release();}
+  }
+  if(route==='/roster/imports'&&request.method==='GET'){
+    const competitionId=url.searchParams.get('competition_id');if(!uuid.test(String(competitionId))||!await canManage(actor,competitionId))return response({error:'Manager access required'},403);return response((await pool.query('select id,file_name,summary,created_at,undone_at from public.bowling_roster_imports where competition_id=$1 order by created_at desc limit 25',[competitionId])).rows);
+  }
+  if(route==='/roster/import-undo'&&request.method==='POST'){
+    const body=await bodyJson(request),competitionId=body.competitionId;if(!uuid.test(String(competitionId))||!await canManage(actor,competitionId))return response({error:'Manager access required'},403);const db=await pool.connect();try{await db.query('begin');const batch=(await db.query('select * from public.bowling_roster_imports where competition_id=$1 and undone_at is null order by created_at desc limit 1 for update',[competitionId])).rows[0];if(!batch){await db.query('rollback');return response({error:'No roster import to undo'},404);}await db.query('delete from public.bowling_roster_profiles where competition_id=$1',[competitionId]);for(const p of batch.before_snapshot)await db.query(`insert into public.bowling_roster_profiles(id,competition_id,membership_number,name,email,handicap,active,claimed_user_id,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,[p.id,p.competition_id,p.membership_number,p.name,p.email,p.handicap,p.active,p.claimed_user_id,p.created_at,p.updated_at]);await db.query('update public.bowling_roster_imports set undone_at=now() where id=$1',[batch.id]);await db.query('commit');return response({undone:true});}catch(error){await db.query('rollback');throw error;}finally{db.release();}
   }
   if (route === '/session' && request.method === 'GET') {
     const sessionId=url.searchParams.get('id');
     if (!uuid.test(String(sessionId))) return response({ error: 'Invalid session ID' }, 400);
-    const { rows }=await pool.query(`select id,competition_id,label,session_date,state,results,personal
+    const { rows }=await pool.query(`select id,competition_id,label,session_date,state,results,personal,bracket_details_purged_at
       from public.bowling_session_archives where id=$1`,[sessionId]);
     if(!rows.length) return response({error:'Session not found'},404);
-    let bowlerId=(rows[0].state?.bowlers||[]).find(b=>String(b.email||'').toLowerCase()===actor.email)?.id;
-    if(!bowlerId) {
-      const selected=await pool.query(`select bowler_id from public.bowling_user_bowler_links
-        where user_id=$1 and competition_id=$2 limit 1`,[actor.id,rows[0].competition_id]);
-      bowlerId=selected.rows[0]?.bowler_id;
-    }
+    if(!await canAccess(actor,rows[0].competition_id))return response({error:'Competition access required'},403);
+    let bowlerId=await resolveBowlerId(actor,rows[0].competition_id,rows[0].state);
     let personal=personalForBowler(rows[0].state,rows[0].results,bowlerId);
+    if(rows[0].bracket_details_purged_at){const linked=(rows[0].state?.bowlers||[]).find(b=>b.id===bowlerId);personal=(Array.isArray(rows[0].personal)?rows[0].personal:[]).find(item=>String(item.email||'').toLowerCase()===String(linked?.email||'').toLowerCase())?.data||personal;}
     if(rows[0].state?.format==='delarosa-masters-v1') {
       const linkedBowler=(rows[0].state.bowlers||[]).find(b=>b.id===bowlerId);
       personal=(Array.isArray(rows[0].personal)?rows[0].personal:[]).find(item=>
@@ -210,6 +310,7 @@ async function handler(request) {
     const body=await bodyJson(request);
     if(!uuid.test(String(body.competitionId))||typeof body.bowlerId!=='string'||!body.bowlerId)
       return response({error:'Invalid bowler selection'},400);
+    if(!await canAccess(actor,body.competitionId))return response({error:'Competition access required'},403);
     await pool.query(`insert into public.bowling_user_bowler_links(user_id,competition_id,bowler_id) values($1,$2,$3)
       on conflict(user_id,competition_id) do update set bowler_id=excluded.bowler_id,updated_at=now()`,[actor.id,body.competitionId,body.bowlerId]);
     let personal=null;
@@ -310,16 +411,12 @@ async function handler(request) {
     return response({ joined: true });
   }
   if (route === '/results' && request.method === 'GET') {
+    if(!await canAccess(actor,id))return response({error:'Competition access required'},403);
     const [result,state] = await Promise.all([
       pool.query('select data from public.bowling_results where competition_id=$1',[id]),
       pool.query('select data from public.bowling_competition_state where competition_id=$1',[id])
     ]);
-    let bowlerId=(state.rows[0]?.data?.bowlers||[]).find(b=>String(b.email||'').toLowerCase()===actor.email)?.id;
-    if(!bowlerId) {
-      const selected=await pool.query(`select bowler_id from public.bowling_user_bowler_links
-        where user_id=$1 and competition_id=$2 limit 1`,[actor.id,id]);
-      bowlerId=selected.rows[0]?.bowler_id;
-    }
+    let bowlerId=await resolveBowlerId(actor,id,state.rows[0]?.data);
     let personalData=personalForBowler(state.rows[0]?.data,result.rows[0]?.data,bowlerId);
     if(state.rows[0]?.data?.format==='delarosa-masters-v1') {
       const linkedBowler=(state.rows[0].data.bowlers||[]).find(b=>b.id===bowlerId);
@@ -376,6 +473,7 @@ async function handler(request) {
         await db.query('insert into public.bowling_personal_results (competition_id,email,data) values ($1,$2,$3)',
           [id,item.email.trim().toLowerCase(),item.data]);
       }
+      await ensureRosterProfiles(db,id,body.state.bowlers);
       await db.query('commit');
       if(changed.length&&/^\d{4}-\d{2}-\d{2}$/.test(body.eventDate||'')) {
         const ids=changed.map(b=>b.id), names=Object.fromEntries(changed.map(b=>[b.id,b.name]));
