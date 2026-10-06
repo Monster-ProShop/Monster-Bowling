@@ -99,13 +99,14 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     $('usersAccess').classList.toggle('hidden',!superAdmin);
     $('accountEmail').textContent = user.email;
     const sessions=await Promise.all(rows.map(c=>api('/sessions?competition_id='+encodeURIComponent(c.id))));
-    $('competitionCards').innerHTML = rows.map((c,i) =>
-      '<article class="card competition-card" data-competition-search="'+esc([c.name,c.manager_name,c.manager_email,c.country,c.region,c.city,c.bowling_center].filter(Boolean).join(' ').toLowerCase())+'"><h3>' + esc(c.name||'Unnamed competition') + '</h3><p>' + esc(c.kind) +
+    $('competitionCards').innerHTML = rows.map((c,i) => {
+      const canManage=!!(admin&&c.can_manage);
+      return '<article class="card competition-card" data-competition-search="'+esc([c.name,c.manager_name,c.manager_email,c.country,c.region,c.city,c.bowling_center].filter(Boolean).join(' ').toLowerCase())+'"><h3>' + esc(c.name||'Unnamed competition') + '</h3><p>' + esc(c.kind) +
       ' · ' + esc(c.status) + '</p><button data-open="' + esc(c.id) + '">' +
-      (c.can_manage ? 'Manage current session' : 'View current session') + '</button>'+(c.can_manage?'<button type="button" class="secondary" data-linked-accounts="'+esc(c.id)+'">Manage Bowler Linked Accounts</button><button type="button" class="secondary" data-roster="'+esc(c.id)+'">Permanent roster</button><button type="button" class="secondary" data-edit-competition="'+esc(c.id)+'">Edit details</button>':'<button type="button" class="danger" data-remove-league="'+esc(c.id)+'">Remove from my dashboard</button>')+((superAdmin||c.owner_user_id===user.id)?'<button type="button" class="danger" data-delete-competition="'+esc(c.id)+'" data-competition-name="'+esc(c.name||'Unnamed competition')+'">Delete league/tournament</button>':'')+'<div class="session-list"><strong>Saved sessions · '+new Date().getFullYear()+'</strong>'+
+      (canManage ? 'Manage current session' : 'View current session') + '</button>'+(canManage?'<button type="button" class="secondary" data-linked-accounts="'+esc(c.id)+'">Manage Bowler Linked Accounts</button><button type="button" class="secondary" data-roster="'+esc(c.id)+'">Permanent roster</button><button type="button" class="secondary" data-edit-competition="'+esc(c.id)+'">Edit details</button>':'<button type="button" class="danger" data-remove-league="'+esc(c.id)+'">Remove from my dashboard</button>')+((superAdmin||c.owner_user_id===user.id)?'<button type="button" class="danger" data-delete-competition="'+esc(c.id)+'" data-competition-name="'+esc(c.name||'Unnamed competition')+'">Delete league/tournament</button>':'')+'<div class="session-list"><strong>Saved sessions · '+new Date().getFullYear()+'</strong>'+
       (sessions[i].length?sessions[i].map(x=>'<div class="session-row"><span>'+esc(x.label)+'<br><small>'+esc(String(x.session_date).slice(0,10))+'</small></span><button class="secondary" data-session="'+esc(x.id)+'">View</button></div>').join(''):'<p class="hint">No saved sessions yet.</p>')+
       '<button type="button" class="secondary" data-previous="'+esc(c.id)+'">View previous years</button><div data-previous-list="'+esc(c.id)+'"></div></div></article>'
-    ).join('') || '<p>No competitions are available yet.</p>';
+    }).join('') || '<p>No competitions are available yet.</p>';
     if(superAdmin)await loadUsers();
     show('portalDashboard');
     if(!admin)await searchDirectory();
@@ -113,9 +114,10 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
   }
   function profileForName(name){return permanentRoster.find(p=>p.active&&p.name.localeCompare(name,undefined,{sensitivity:'base'})===0)||null;}
   async function loadPermanentRoster(competitionId){permanentRoster=await api('/roster?competition_id='+encodeURIComponent(competitionId));$('leagueRosterNames').innerHTML=permanentRoster.filter(p=>p.active).map(p=>'<option value="'+esc(p.name)+'"></option>').join('');return permanentRoster;}
-  async function openRosterManager(competitionId){rosterCompetition=competitions.find(c=>c.id===competitionId);await loadPermanentRoster(competitionId);const imports=await api('/roster/imports?competition_id='+encodeURIComponent(competitionId));$('rosterManagerTitle').textContent='Permanent roster — '+rosterCompetition.name;$('permanentRosterTable').innerHTML='<div class="table-wrap"><table><thead><tr><th>Player ID</th><th>Name</th><th>Email</th><th>Handicap</th><th>Status</th><th>Account link</th></tr></thead><tbody>'+permanentRoster.map(p=>'<tr><td>'+esc(p.membership_number||p.id)+'</td><td>'+esc(p.name)+'</td><td>'+esc(p.email||'')+'</td><td>'+esc(p.handicap)+'</td><td>'+(p.active?'Active':'Inactive')+'</td><td>'+(p.claimed_user_id?'Linked <button class="secondary" data-reset-profile="'+esc(p.id)+'">Reset</button>':'Not linked')+'</td></tr>').join('')+'</tbody></table></div>'+(imports.length?'<h3>Import history</h3><ul>'+imports.map(x=>'<li>'+esc(x.file_name||'Roster import')+' · '+esc(String(x.created_at).slice(0,10))+(x.undone_at?' · Undone':'')+'</li>').join('')+'</ul>':'<p class="hint">No roster imports yet.</p>');$('rosterManager').classList.remove('hidden');$('rosterManager').scrollIntoView({behavior:'smooth'});}
+  async function openRosterManager(competitionId){rosterCompetition=competitions.find(c=>c.id===competitionId);if(!(admin&&rosterCompetition?.can_manage))throw new Error('Manager access required.');await loadPermanentRoster(competitionId);const imports=await api('/roster/imports?competition_id='+encodeURIComponent(competitionId));$('rosterManagerTitle').textContent='Permanent roster — '+rosterCompetition.name;$('permanentRosterTable').innerHTML='<div class="table-wrap"><table><thead><tr><th>Player ID</th><th>Name</th><th>Email</th><th>Handicap</th><th>Status</th><th>Account link</th></tr></thead><tbody>'+permanentRoster.map(p=>'<tr><td>'+esc(p.membership_number||p.id)+'</td><td>'+esc(p.name)+'</td><td>'+esc(p.email||'')+'</td><td>'+esc(p.handicap)+'</td><td>'+(p.active?'Active':'Inactive')+'</td><td>'+(p.claimed_user_id?'Linked <button class="secondary" data-reset-profile="'+esc(p.id)+'">Reset</button>':'Not linked')+'</td></tr>').join('')+'</tbody></table></div>'+(imports.length?'<h3>Import history</h3><ul>'+imports.map(x=>'<li>'+esc(x.file_name||'Roster import')+' · '+esc(String(x.created_at).slice(0,10))+(x.undone_at?' · Undone':'')+'</li>').join('')+'</ul>':'<p class="hint">No roster imports yet.</p>');$('rosterManager').classList.remove('hidden');$('rosterManager').scrollIntoView({behavior:'smooth'});}
   async function openLinkedAccounts(competitionId){
     rosterCompetition=competitions.find(c=>c.id===competitionId);
+    if(!(admin&&rosterCompetition?.can_manage))throw new Error('Manager access required.');
     const data=await api('/roster/links?competition_id='+encodeURIComponent(competitionId));
     $('linkedAccountsTitle').textContent='Manage Bowler Linked Accounts — '+rosterCompetition.name;
     $('linkedAccountEmails').innerHTML=data.registeredEmails.map(email=>'<option value="'+esc(email)+'"></option>').join('');
@@ -197,7 +199,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     $('currentCompetition').textContent = competition.name;
     $('viewerCompetition').textContent = competition.name;
     $('printSavedSession').classList.add('hidden');
-    if (competition.can_manage) {
+    if (admin&&competition.can_manage) {
       await loadPermanentRoster(id);
       const state = await api('/state?id=' + encodeURIComponent(id));
       window.BowlingApp.setState(state?.bowlers ? state : window.BowlingApp.fresh());

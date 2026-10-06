@@ -29,6 +29,12 @@ test('permanent roster import preview, apply, undo and claims are wired',()=>{
   assert.match(backend,/where claimed_user_id=\$1/);
   assert.match(backend,/update public\.bowling_roster_profiles set membership_number=\$1,updated_at=now\(\) where claimed_user_id=\$2/);
 });
+test('linked-account management is hidden and blocked for bowler accounts',()=>{
+  const portal=fs.readFileSync(root+'/portal.js','utf8');
+  assert.match(portal,/const canManage=!!\(admin&&c\.can_manage\)/);
+  assert.match(portal,/if\(!\(admin&&rosterCompetition\?\.can_manage\)\)throw new Error\('Manager access required\.'\)/);
+  assert.match(backend,/if\(!uuid\.test\(String\(competitionId\)\)\|\|!await canManage\(actor,competitionId\)\)return response\(\{error:'Manager access required'\},403\)/);
+});
 test('archive defaults to current year and old bracket detail is purged without finances',()=>{
   assert.match(backend,/extract\(year from session_date\)=extract\(year from current_date\)/);
   assert.match(migration,/current_date-interval '6 months'/);
