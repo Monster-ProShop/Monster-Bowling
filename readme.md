@@ -19,7 +19,7 @@ Other users create an account with email and password, enter the emailed verific
 
 The Brackets screen displays each complete eight-bowler draw as a tournament tree. A blue circle marks a winner, and a red X marks a loser after the relevant game score is entered. Each bracket can be downloaded as an SVG image.
 
-Handicap bracket scores add the bowler's handicap to each game. Each bracket's first and second place payouts use the saved fixed amounts. Ties in a round advance together. Final ties share the money for the places they occupy.
+Handicap bracket scores add the bowler's handicap to each game. Each bracket's first and second place payouts use the saved fixed amounts. Ties in a round advance together. A final-game tie is decided by handicap series, then highest handicap game. If those are also tied, the combined first and second prizes are split equally.
 
 The High Game Pot uses each entrant's highest single game **with handicap**. The top score takes the configured percentage of the pot; tied winners split it. Doubles uses the sum of both partners' handicap scores in each game. The highest combined game and highest combined three-game series can each win a configurable portion of the Doubles pool; enable either prize or both. Each prize is split evenly between the two partners. Tied teams share the applicable prize. The Scoring tab shows combined totals for every registered team; a bowler's entered games are reused across all their teams.
 

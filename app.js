@@ -16,6 +16,7 @@ const ES = {
   'Registration & configuration':'Registro y configuración','Brackets':'Brackets','High Game':'Linea Alta',
   'Doubles':'Parejas Virtuales','Scoring':'Puntuación','Reports & payouts':'Reportes y premios','Competition Summary':'Resumen de la competencia','Overview of entries, payouts and profit for this session.':'Resumen de inscripciones, premios y ganancia de esta sesión.','Handicap brackets played':'Brackets con hándicap jugados','Scratch brackets played':'Brackets scratch jugados','High Game entries':'Inscripciones de Línea Alta','Doubles teams played':'Parejas Virtuales jugadas','Total income':'Ingreso total','Total payout':'Pago total','Total profit':'Ganancia total','Summary':'Resumen','Results':'Resultados',
   'Buy-ins and payouts':'Inscripciones y premios','Buy-ins are per bowler or bracket entry. All awards use the fixed payout amounts saved below.':'Los costos son por jugador o por entrada a un bracket. Todos los premios usan las cantidades fijas guardadas abajo.',
+  'A final-game tie is decided by handicap series, then highest handicap game. If both remain tied, the combined first and second prizes are split equally.':'Un empate en la final se decide por la serie con hándicap y después por el juego más alto con hándicap. Si todo sigue empatado, los premios combinados del primer y segundo lugar se dividen en partes iguales.',
   'Handicap bracket':'Bracket con hándicap','Scratch bracket':'Bracket scratch','Handicap High Game Pot':'Linea Alta con hándicap',
   'Buy-in ($)':'Inscripción ($)','1st place (%)':'1.er lugar (%)','2nd place (%)':'2.º lugar (%)',
   'Winner payout (%)':'Premio al ganador (%)','Highest game plus handicap wins. Tied winners split the payout equally.':'Gana el juego más alto con hándicap. Si hay empate, se divide el premio.',
@@ -354,6 +355,28 @@ function bracketFinalists(ids,type,bowlers) {
   if(finalists.length>1&&finalists.some(player=>!hasGame(player,3)))return null;
   return finalists;
 }
+function bracketFinalAwards(finalists,type,firstAmount,secondAmount,description) {
+  const hdcp=type==='hdcp', games=[1,2,3];
+  const metrics=player=>[
+    game(player,3,hdcp),
+    games.reduce((total,g)=>total+game(player,g,true),0),
+    Math.max(...games.map(g=>game(player,g,true)))
+  ];
+  const ranked=finalists.map(player=>({player,metrics:metrics(player)})).sort((a,b)=>
+    b.metrics[0]-a.metrics[0]||b.metrics[1]-a.metrics[1]||b.metrics[2]-a.metrics[2]||a.player.name.localeCompare(b.player.name));
+  const places=[firstAmount,secondAmount],awards=[];
+  for(let i=0;i<ranked.length&&i<places.length;){
+    let end=i+1;
+    while(end<ranked.length&&ranked[end].metrics.every((value,index)=>value===ranked[i].metrics[index]))end++;
+    const pool=places.slice(i,Math.min(end,places.length)).reduce((total,amount)=>total+amount,0);
+    if(pool){
+      const share=Math.floor(pool/(end-i)),remainder=pool%(end-i),tie=end-i>1;
+      for(let j=i;j<end;j++)awards.push({id:ranked[j].player.id,category:type,description:description+' · '+(i+1)+(tie?' tie':'')+' ('+ranked[j].metrics[0]+')',amount:share+(j-i<remainder?1:0)});
+    }
+    i=end;
+  }
+  return awards;
+}
 function bracketGraphic(ids,type,bowlers,index) {
   const byId=new Map(bowlers.map(b=>[b.id,b]));
   const entrants=ids.map(id=>id===null?null:byId.get(id)).filter((_,i)=>i<8);
@@ -369,6 +392,14 @@ function bracketGraphic(ids,type,bowlers,index) {
   const first=Array.from({length:4},(_,i)=>outcome(entrants.slice(i*2,i*2+2),1));
   const second=Array.from({length:2},(_,i)=>outcome([...first[i*2].winners,...first[i*2+1].winners],2,first[i*2].decided&&first[i*2+1].decided));
   const final=outcome([...second[0].winners,...second[1].winners],3,second.every(x=>x.decided));
+  if(final.decided&&final.winners.length>1&&final.winners.every(complete)){
+    const seriesTop=Math.max(...final.winners.map(player=>series(player,true)));
+    final.winners=final.winners.filter(player=>series(player,true)===seriesTop);
+    if(final.winners.length>1){
+      const gameTop=Math.max(...final.winners.map(player=>bestGame(player,true)));
+      final.winners=final.winners.filter(player=>bestGame(player,true)===gameTop);
+    }
+  }
   const xs=[20,300,590,870], width=210, height=34;
   const ys1=Array.from({length:8},(_,i)=>70+i*54);
   const centers1=ys1.map(y=>y+height/2);
@@ -420,10 +451,8 @@ function calculate(state) {
     for(const [i,ids] of state.brackets[type].entries()) {
       const finalists=bracketFinalists(ids,type,bowlers);
       if(!finalists){pending.push(type+' bracket #'+(i+1)+' needs the next score only from bowlers still competing.');continue;}
-      const pool=cents(c[type+'Buyin'])*ids.filter(Boolean).length;
-      const value=p=>game(p,3,type==='hdcp');
       const payouts=[cents(c[type+'FirstAmount']),cents(c[type+'SecondAmount'])];
-      awards.push(...rankAwards(finalists,value,100,payouts,(type==='hdcp'?'HDCP':'Scratch')+' bracket #'+(i+1),type));
+      awards.push(...bracketFinalAwards(finalists,type,payouts[0],payouts[1],(type==='hdcp'?'HDCP':'Scratch')+' bracket #'+(i+1)));
     }
   }
   const high=bowlers.filter(b=>b.high);
