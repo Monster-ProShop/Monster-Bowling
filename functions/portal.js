@@ -252,6 +252,40 @@ async function handler(request) {
     const body=await bodyJson(request);if(!uuid.test(String(body.competitionId))||!await canManage(actor,body.competitionId))return response({error:'Manager access required'},403);
     await pool.query('update public.bowling_roster_profiles set claimed_user_id=null,updated_at=now() where id=$1 and competition_id=$2',[body.profileId,body.competitionId]);return response({saved:true});
   }
+  if(route==='/roster/links'&&request.method==='GET'){
+    const competitionId=url.searchParams.get('competition_id');
+    if(!uuid.test(String(competitionId))||!await canManage(actor,competitionId))return response({error:'Manager access required'},403);
+    const [profiles,members]=await Promise.all([
+      pool.query(`select p.id,p.membership_number,p.name,p.email roster_email,p.active,p.claimed_user_id,lower(u.email) linked_email
+        from public.bowling_roster_profiles p left join neon_auth."user" u on u.id=p.claimed_user_id
+        where p.competition_id=$1 order by p.active desc,lower(p.name)`,[competitionId]),
+      pool.query(`select lower(u.email) email from public.bowling_memberships m join neon_auth."user" u on u.id=m.user_id
+        where m.competition_id=$1 order by lower(u.email)`,[competitionId])
+    ]);
+    return response({profiles:profiles.rows,registeredEmails:members.rows.map(x=>x.email)});
+  }
+  if(route==='/roster/link-account'&&request.method==='POST'){
+    const body=await bodyJson(request),competitionId=body.competitionId,profileId=body.profileId,email=cleanText(body.email,254).toLowerCase();
+    if(!uuid.test(String(competitionId))||!uuid.test(String(profileId))||!await canManage(actor,competitionId))return response({error:'Manager access required'},403);
+    const db=await pool.connect();try{
+      await db.query('begin');
+      const profile=(await db.query('select * from public.bowling_roster_profiles where id=$1 and competition_id=$2 for update',[profileId,competitionId])).rows[0];
+      if(!profile){await db.query('rollback');return response({error:'Bowler profile not found'},404);}
+      if(profile.claimed_user_id)await db.query('delete from public.bowling_user_bowler_links where user_id=$1 and competition_id=$2',[profile.claimed_user_id,competitionId]);
+      if(!email){await db.query('update public.bowling_roster_profiles set claimed_user_id=null,updated_at=now() where id=$1',[profileId]);await db.query('commit');return response({saved:true,unlinked:true});}
+      const account=(await db.query('select id,lower(email) email from neon_auth."user" where lower(email)=$1',[email])).rows[0];
+      if(!account){await db.query('rollback');return response({error:'No registered account uses that email'},404);}
+      await db.query('update public.bowling_roster_profiles set claimed_user_id=null,updated_at=now() where competition_id=$1 and claimed_user_id=$2',[competitionId,account.id]);
+      await db.query('delete from public.bowling_user_bowler_links where user_id=$1 and competition_id=$2',[account.id,competitionId]);
+      await db.query('update public.bowling_roster_profiles set claimed_user_id=$1,updated_at=now() where id=$2',[account.id,profileId]);
+      await db.query('insert into public.bowling_memberships(competition_id,user_id) values($1,$2) on conflict do nothing',[competitionId,account.id]);
+      const current=(await db.query('select data from public.bowling_competition_state where competition_id=$1',[competitionId])).rows[0]?.data;
+      const bowler=(current?.bowlers||[]).find(b=>b.id===profile.id||String(b.email||'').toLowerCase()===String(profile.email||'').toLowerCase()||normalizedName(b.name)===normalizedName(profile.name));
+      if(bowler)await db.query(`insert into public.bowling_user_bowler_links(user_id,competition_id,bowler_id) values($1,$2,$3)
+        on conflict(user_id,competition_id) do update set bowler_id=excluded.bowler_id,updated_at=now()`,[account.id,competitionId,bowler.id]);
+      await db.query('commit');return response({saved:true,linkedEmail:account.email});
+    }catch(error){await db.query('rollback');throw error;}finally{db.release();}
+  }
   if(route==='/roster/import-preview'&&request.method==='POST'){
     const body=await bodyJson(request),competitionId=body.competitionId;if(!uuid.test(String(competitionId))||!await canManage(actor,competitionId))return response({error:'Manager access required'},403);
     const existing=await rosterRows(competitionId),rows=Array.isArray(body.rows)?body.rows:[],seen=new Set(),preview=[];

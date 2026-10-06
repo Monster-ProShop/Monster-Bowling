@@ -16,6 +16,7 @@ test('account types and manager-owned competition formats are supported',()=>{
 });
 test('permanent roster import preview, apply, undo and claims are wired',()=>{
   for(const route of ['/roster/import-preview','/roster/import','/roster/import-undo','/roster/claim','/roster/reset-claim'])assert.ok(backend.includes(route),route);
+  for(const route of ['/roster/links','/roster/link-account'])assert.ok(backend.includes(route),route);
   assert.match(migration,/create table if not exists public\.bowling_roster_profiles/);
   assert.match(migration,/unique\(competition_id,claimed_user_id\)/);
   assert.match(indexHtml,/Download Excel roster template/);
