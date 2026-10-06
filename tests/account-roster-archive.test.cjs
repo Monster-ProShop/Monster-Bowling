@@ -23,6 +23,8 @@ test('permanent roster import preview, apply, undo and claims are wired',()=>{
   assert.match(portal,/\['Bowler First Name','Bowler Last Name','Handicap'\]/);
   assert.match(backend,/Both Bowler First Name and Bowler Last Name are required/);
   assert.match(backend,/Every imported bowler must include a first and last name/);
+  assert.match(backend,/locationLetters\(competition\.country\)\+locationLetters\(competition\.region\)/);
+  assert.match(backend,/String\(last\+1\)\.padStart\(7,'0'\)/);
 });
 test('archive defaults to current year and old bracket detail is purged without finances',()=>{
   assert.match(backend,/extract\(year from session_date\)=extract\(year from current_date\)/);
