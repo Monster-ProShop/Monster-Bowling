@@ -25,6 +25,9 @@ test('permanent roster import preview, apply, undo and claims are wired',()=>{
   assert.match(backend,/Every imported bowler must include a first and last name/);
   assert.match(backend,/locationLetters\(competition\.country\)\+locationLetters\(competition\.region\)/);
   assert.match(backend,/String\(last\+1\)\.padStart\(7,'0'\)/);
+  assert.match(backend,/syncPlayerIdForUser/);
+  assert.match(backend,/where claimed_user_id=\$1/);
+  assert.match(backend,/update public\.bowling_roster_profiles set membership_number=\$1,updated_at=now\(\) where claimed_user_id=\$2/);
 });
 test('archive defaults to current year and old bracket detail is purged without finances',()=>{
   assert.match(backend,/extract\(year from session_date\)=extract\(year from current_date\)/);

@@ -74,9 +74,20 @@ async function nextPlayerId(db,competitionId,required=false){
   const competition=(await db.query('select country,region from public.bowling_competitions where id=$1 for update',[competitionId])).rows[0];
   if(!competition?.country||!competition?.region){if(required)throw new Error('Add the competition country and state / region before importing a roster');return null;}
   const prefix=locationLetters(competition.country)+locationLetters(competition.region);
+  await db.query("select pg_advisory_xact_lock(hashtext('bowling-player-id:'||$1))",[prefix]);
   const last=Number((await db.query(`select coalesce(max((right(membership_number,7))::int),0) value from public.bowling_roster_profiles
-    where competition_id=$1 and membership_number ~ '^[A-Z]{4}[0-9]{7}$'`,[competitionId])).rows[0]?.value||0);
+    where left(membership_number,4)=$1 and membership_number ~ '^[A-Z]{4}[0-9]{7}$'`,[prefix])).rows[0]?.value||0);
   return prefix+String(last+1).padStart(7,'0');
+}
+async function syncPlayerIdForUser(db,userId,competitionId,profileId){
+  const profiles=(await db.query(`select id,competition_id,membership_number,created_at from public.bowling_roster_profiles
+    where claimed_user_id=$1 order by (id=$2) asc,(membership_number is null),created_at`,[userId,profileId])).rows;
+  if(!profiles.length)return null;
+  let playerId=profiles.find(p=>p.membership_number)?.membership_number||null;
+  if(playerId){const collision=await db.query('select 1 from public.bowling_roster_profiles where membership_number=$1 and claimed_user_id is distinct from $2 limit 1',[playerId,userId]);if(collision.rowCount)playerId=null;}
+  if(!playerId)playerId=await nextPlayerId(db,competitionId,false);
+  if(playerId)await db.query('update public.bowling_roster_profiles set membership_number=$1,updated_at=now() where claimed_user_id=$2',[playerId,userId]);
+  return playerId;
 }
 async function rosterRows(competitionId){return (await pool.query(`select id,competition_id,membership_number,name,email,handicap,active,claimed_user_id,updated_at
   from public.bowling_roster_profiles where competition_id=$1 order by active desc,lower(name)`,[competitionId])).rows;}
@@ -97,7 +108,7 @@ async function resolveBowlerId(actor,competitionId,state){
   let id=bowlers.find(b=>String(b.email||'').toLowerCase()===actor.email)?.id;
   const profile=(await pool.query(`select * from public.bowling_roster_profiles where competition_id=$1 and
     (claimed_user_id=$2 or (claimed_user_id is null and lower(email)=$3)) order by claimed_user_id nulls last limit 1`,[competitionId,actor.id,actor.email])).rows[0];
-  if(profile&&!profile.claimed_user_id)await pool.query('update public.bowling_roster_profiles set claimed_user_id=$1,updated_at=now() where id=$2 and claimed_user_id is null',[actor.id,profile.id]);
+  if(profile){const db=await pool.connect();try{await db.query('begin');if(!profile.claimed_user_id)await db.query('update public.bowling_roster_profiles set claimed_user_id=$1,updated_at=now() where id=$2 and claimed_user_id is null',[actor.id,profile.id]);await syncPlayerIdForUser(db,actor.id,competitionId,profile.id);await db.query('commit');}catch(error){await db.query('rollback');throw error;}finally{db.release();}}
   if(!id&&profile)id=bowlers.find(b=>b.id===profile.id||String(b.email||'').toLowerCase()===String(profile.email||'').toLowerCase()||normalizedName(b.name)===normalizedName(profile.name))?.id;
   if(!id)id=(await pool.query('select bowler_id from public.bowling_user_bowler_links where user_id=$1 and competition_id=$2 limit 1',[actor.id,competitionId])).rows[0]?.bowler_id;
   if(id)await pool.query(`insert into public.bowling_user_bowler_links(user_id,competition_id,bowler_id) values($1,$2,$3)
@@ -248,14 +259,14 @@ async function handler(request) {
   }
   if(route==='/roster/claim'&&request.method==='POST'){
     const body=await bodyJson(request);if(!uuid.test(String(body.competitionId))||!uuid.test(String(body.profileId))||body.confirm!==true)return response({error:'Confirm the bowler profile selection'},400);
-    const profile=(await pool.query('select * from public.bowling_roster_profiles where id=$1 and competition_id=$2',[body.profileId,body.competitionId])).rows[0];
-    if(!profile)return response({error:'Bowler profile not found'},404);if(profile.claimed_user_id&&profile.claimed_user_id!==actor.id)return response({error:'This bowler profile is already linked'},409);
-    const existingClaim=await pool.query('select id,name from public.bowling_roster_profiles where competition_id=$1 and claimed_user_id=$2 and id<>$3',[body.competitionId,actor.id,body.profileId]);
-    if(existingClaim.rowCount)return response({error:'Your account is already permanently linked to '+existingClaim.rows[0].name+' for this league. Ask a Manager to reset it.'},409);
-    await pool.query('update public.bowling_roster_profiles set claimed_user_id=$1,email=coalesce(email,$4),updated_at=now() where id=$2 and competition_id=$3',[actor.id,body.profileId,body.competitionId,actor.email]);
-    const currentState=(await pool.query('select data from public.bowling_competition_state where competition_id=$1',[body.competitionId])).rows[0]?.data,bowler=(currentState?.bowlers||[]).find(b=>b.id===profile.id||String(b.email||'').toLowerCase()===String(profile.email||'').toLowerCase()||normalizedName(b.name)===normalizedName(profile.name));
-    if(bowler)await pool.query(`insert into public.bowling_user_bowler_links(user_id,competition_id,bowler_id) values($1,$2,$3) on conflict(user_id,competition_id) do update set bowler_id=excluded.bowler_id,updated_at=now()`,[actor.id,body.competitionId,bowler.id]);
-    await pool.query('insert into public.bowling_memberships(competition_id,user_id) values($1,$2) on conflict do nothing',[body.competitionId,actor.id]);return response({linked:true,profile});
+    const db=await pool.connect();try{await db.query('begin');const profile=(await db.query('select * from public.bowling_roster_profiles where id=$1 and competition_id=$2 for update',[body.profileId,body.competitionId])).rows[0];
+    if(!profile){await db.query('rollback');return response({error:'Bowler profile not found'},404);}if(profile.claimed_user_id&&profile.claimed_user_id!==actor.id){await db.query('rollback');return response({error:'This bowler profile is already linked'},409);}
+    const existingClaim=await db.query('select id,name from public.bowling_roster_profiles where competition_id=$1 and claimed_user_id=$2 and id<>$3',[body.competitionId,actor.id,body.profileId]);
+    if(existingClaim.rowCount){await db.query('rollback');return response({error:'Your account is already permanently linked to '+existingClaim.rows[0].name+' for this league. Ask a Manager to reset it.'},409);}
+    await db.query('update public.bowling_roster_profiles set claimed_user_id=$1,email=coalesce(email,$4),updated_at=now() where id=$2 and competition_id=$3',[actor.id,body.profileId,body.competitionId,actor.email]);
+    const playerId=await syncPlayerIdForUser(db,actor.id,body.competitionId,body.profileId),currentState=(await db.query('select data from public.bowling_competition_state where competition_id=$1',[body.competitionId])).rows[0]?.data,bowler=(currentState?.bowlers||[]).find(b=>b.id===profile.id||String(b.email||'').toLowerCase()===String(profile.email||'').toLowerCase()||normalizedName(b.name)===normalizedName(profile.name));
+    if(bowler)await db.query(`insert into public.bowling_user_bowler_links(user_id,competition_id,bowler_id) values($1,$2,$3) on conflict(user_id,competition_id) do update set bowler_id=excluded.bowler_id,updated_at=now()`,[actor.id,body.competitionId,bowler.id]);
+    await db.query('insert into public.bowling_memberships(competition_id,user_id) values($1,$2) on conflict do nothing',[body.competitionId,actor.id]);await db.query('commit');return response({linked:true,profile:{...profile,membership_number:playerId}});}catch(error){await db.query('rollback');throw error;}finally{db.release();}
   }
   if(route==='/roster/reset-claim'&&request.method==='POST'){
     const body=await bodyJson(request);if(!uuid.test(String(body.competitionId))||!await canManage(actor,body.competitionId))return response({error:'Manager access required'},403);
@@ -287,12 +298,13 @@ async function handler(request) {
       await db.query('update public.bowling_roster_profiles set claimed_user_id=null,updated_at=now() where competition_id=$1 and claimed_user_id=$2',[competitionId,account.id]);
       await db.query('delete from public.bowling_user_bowler_links where user_id=$1 and competition_id=$2',[account.id,competitionId]);
       await db.query('update public.bowling_roster_profiles set claimed_user_id=$1,updated_at=now() where id=$2',[account.id,profileId]);
+      const playerId=await syncPlayerIdForUser(db,account.id,competitionId,profileId);
       await db.query('insert into public.bowling_memberships(competition_id,user_id) values($1,$2) on conflict do nothing',[competitionId,account.id]);
       const current=(await db.query('select data from public.bowling_competition_state where competition_id=$1',[competitionId])).rows[0]?.data;
       const bowler=(current?.bowlers||[]).find(b=>b.id===profile.id||String(b.email||'').toLowerCase()===String(profile.email||'').toLowerCase()||normalizedName(b.name)===normalizedName(profile.name));
       if(bowler)await db.query(`insert into public.bowling_user_bowler_links(user_id,competition_id,bowler_id) values($1,$2,$3)
         on conflict(user_id,competition_id) do update set bowler_id=excluded.bowler_id,updated_at=now()`,[account.id,competitionId,bowler.id]);
-      await db.query('commit');return response({saved:true,linkedEmail:account.email});
+      await db.query('commit');return response({saved:true,linkedEmail:account.email,playerId});
     }catch(error){await db.query('rollback');throw error;}finally{db.release();}
   }
   if(route==='/roster/import-preview'&&request.method==='POST'){
