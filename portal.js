@@ -327,8 +327,11 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     while (saveJob) {
       const job = saveJob;
       saveJob = null;
-      try { await api('/save?id=' + encodeURIComponent(job.p_competition_id),'POST',
-        {state:job.p_state,results:job.p_results,personal:job.p_personal,eventDate:new Date().toLocaleDateString('en-CA')}); }
+      try {
+        const saved=await api('/save?id=' + encodeURIComponent(job.p_competition_id),'POST',
+          {state:job.p_state,results:job.p_results,personal:job.p_personal,eventDate:new Date().toLocaleDateString('en-CA')});
+        if(saved.updatedAt){window.BowlingApp.setServerRevision(saved.updatedAt);if(saveJob)saveJob.p_state._serverUpdatedAt=saved.updatedAt;}
+      }
       catch (error) { saveJob = saveJob || job; notice('Save failed: ' + error.message + '. Your edits remain on this screen.'); break; }
       notice('Saved to Neon at ' + new Date().toLocaleTimeString());
     }

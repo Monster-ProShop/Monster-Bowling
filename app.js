@@ -808,6 +808,7 @@ if(typeof window!=='undefined') window.BowlingApp={
     resetForm();render();
   },
   getState(){return structuredClone(state);},
+  setServerRevision(value){state._serverUpdatedAt=value;},
   exportBackup:downloadBackup,
   bracketGraphic,
   snapshot(){

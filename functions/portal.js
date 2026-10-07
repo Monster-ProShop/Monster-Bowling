@@ -436,8 +436,8 @@ async function handler(request) {
   if (!uuid.test(String(id))) return response({ error: 'Invalid competition ID' }, 400);
   if (route === '/state' && request.method === 'GET') {
     if (!await canManage(actor,id)) return response({ error: 'Manager access required' }, 403);
-    const { rows } = await pool.query('select data from public.bowling_competition_state where competition_id=$1',[id]);
-    return response(rows[0]?.data || null);
+    const { rows } = await pool.query('select data,updated_at from public.bowling_competition_state where competition_id=$1',[id]);
+    return response(rows[0]?{...rows[0].data,_serverUpdatedAt:rows[0].updated_at.toISOString()}:null);
   }
   if (route === '/config' && request.method === 'POST') {
     if (!await canManage(actor,id)) return response({ error: 'Manager access required' }, 403);
@@ -506,8 +506,18 @@ async function handler(request) {
       await db.query('begin');
       const exists = await db.query('select 1 from public.bowling_competitions where id=$1',[id]);
       if (!exists.rows.length) { await db.query('rollback'); return response({ error: 'Competition not found' },404); }
-      const previous=await db.query('select data from public.bowling_competition_state where competition_id=$1',[id]);
+      const previous=await db.query('select data,updated_at from public.bowling_competition_state where competition_id=$1 for update',[id]);
       const previousData=previous.rows[0]?.data||{},persistedById=new Map((previousData.bowlers||[]).map(b=>[b.id,b]));
+      const clientRevision=body.state._serverUpdatedAt;
+      if(clientRevision&&new Date(clientRevision).getTime()!==new Date(previous.rows[0].updated_at).getTime()){
+        await db.query('rollback');return response({error:'This session changed in another tab or device. Reload before saving so newer brackets and scores are not overwritten.'},409);
+      }
+      const priorBracketCount=['hdcp','scratch'].reduce((n,key)=>n+(previousData.brackets?.[key]?.length||0),0);
+      const nextBracketCount=['hdcp','scratch'].reduce((n,key)=>n+(body.state.brackets?.[key]?.length||0),0);
+      if(!clientRevision&&previousData.generated&&priorBracketCount>0&&(!body.state.generated||nextBracketCount===0)){
+        await db.query('rollback');return response({error:'Generated brackets are already saved in Neon. Reload before changing them.'},409);
+      }
+      delete body.state._serverUpdatedAt;
       if(previousData.saturdayLocked){
         const incomingById=new Map((body.state.bowlers||[]).map(b=>[b.id,b]));
         const saturdayKeys=['satEarly','satLate','scratchEarly','scratchLate'];
@@ -536,8 +546,8 @@ async function handler(request) {
       }
       const oldById=new Map((previous.rows[0]?.data?.bowlers||[]).map(b=>[b.id,JSON.stringify(b.scores)]));
       changed=body.state.bowlers.filter(b=>oldById.has(b.id)&&oldById.get(b.id)!==JSON.stringify(b.scores));
-      await db.query(`insert into public.bowling_competition_state (competition_id,data) values ($1,$2)
-        on conflict (competition_id) do update set data=excluded.data,updated_at=now()`,[id,body.state]);
+      const savedState=await db.query(`insert into public.bowling_competition_state (competition_id,data) values ($1,$2)
+        on conflict (competition_id) do update set data=excluded.data,updated_at=now() returning updated_at`,[id,body.state]);
       await db.query(`insert into public.bowling_results (competition_id,data) values ($1,$2)
         on conflict (competition_id) do update set data=excluded.data,updated_at=now()`,[id,body.results]);
       await db.query('delete from public.bowling_personal_results where competition_id=$1',[id]);
@@ -557,7 +567,7 @@ async function handler(request) {
           catch(error){if(error.statusCode===404||error.statusCode===410)await pool.query('delete from public.bowling_notification_subscriptions where endpoint=$1',[sub.endpoint]);}
         }));
       }
-      return response({ saved: true });
+      return response({ saved: true,updatedAt:savedState.rows[0].updated_at.toISOString() });
     } catch (error) {
       await db.query('rollback');
       throw error;
