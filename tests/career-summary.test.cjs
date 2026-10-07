@@ -15,5 +15,7 @@ test('account-wide playing summary aggregates linked profiles and all archives',
   assert.match(ui,/renderCareerSummary/);
   assert.match(ui,/Game '\+item\.game\+' average/);
   assert.match(ui,/G'\+game\+' average/);
+  assert.doesNotMatch(ui,/\['Money invested',dollars\(data\.moneyInvested\)\]/);
+  assert.doesNotMatch(ui,/<th>Invested<\/th>/);
   assert.match(html,/data-dashboard-tab="summary"/);
 });
