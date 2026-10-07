@@ -217,7 +217,7 @@ async function handler(request) {
   if(route==='/career-summary'&&request.method==='GET'){
     const {rows:profiles}=await pool.query(`select distinct on (p.competition_id) p.id,p.competition_id,p.name,p.membership_number,c.name competition_name
       from public.bowling_roster_profiles p join public.bowling_competitions c on c.id=p.competition_id
-      left join public.bowling_user_bowler_links l on l.competition_id=p.competition_id and l.bowler_id=p.id and l.user_id=$1
+      left join public.bowling_user_bowler_links l on l.competition_id=p.competition_id and l.bowler_id=p.id::text and l.user_id=$1
       where p.claimed_user_id=$1 or l.user_id=$1
       order by p.competition_id,(p.claimed_user_id=$1) desc,p.updated_at desc`,[actor.id]);
     const totals={totalGames:0,totalPinfall:0,moneyInvested:0,moneyWon:0,sessionsPlayed:0},byCompetition=[];
@@ -582,6 +582,7 @@ async function handler(request) {
       const previous=await db.query('select data,updated_at from public.bowling_competition_state where competition_id=$1 for update',[id]);
       const previousData=previous.rows[0]?.data||{},persistedById=new Map((previousData.bowlers||[]).map(b=>[b.id,b]));
       const clientRevision=body.state._serverUpdatedAt;
+      const startingNewSession=body.state._startNewSession===true;
       if(clientRevision&&new Date(clientRevision).getTime()!==new Date(previous.rows[0].updated_at).getTime()){
         await db.query('rollback');return response({error:'This session changed in another tab or device. Reload before saving so newer brackets and scores are not overwritten.'},409);
       }
@@ -591,7 +592,8 @@ async function handler(request) {
         await db.query('rollback');return response({error:'Generated brackets are already saved in Neon. Reload before changing them.'},409);
       }
       delete body.state._serverUpdatedAt;
-      if(previousData.saturdayLocked){
+      delete body.state._startNewSession;
+      if(previousData.saturdayLocked&&!startingNewSession){
         const incomingById=new Map((body.state.bowlers||[]).map(b=>[b.id,b]));
         const saturdayKeys=['satEarly','satLate','scratchEarly','scratchLate'];
         const saturdayConfig=['bracketBuyin','bracketFirst','bracketSecond','scratchBracketBuyin','scratchBracketFirst','scratchBracketSecond','satHighBuyin','satHighPayout'];
@@ -613,7 +615,7 @@ async function handler(request) {
         return scoreEntries(old?.scores).some(([key,score])=>score!==null&&score!==''&&score!==undefined&&
           (scoreValue(b.scores,key)===null||scoreValue(b.scores,key)===''||scoreValue(b.scores,key)===undefined));
       });
-      if(clearsSavedScore){
+      if(clearsSavedScore&&!startingNewSession){
         await db.query('rollback');
         return response({error:'Newer scores are already saved. Reload the tournament before making more changes.'},409);
       }

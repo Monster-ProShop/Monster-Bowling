@@ -425,12 +425,14 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     await flushSaves();
     const previous=window.BowlingApp.getState(),blank=window.BowlingApp.fresh();
     blank.config={...previous.config};blank.language=previous.language;
+    blank.bowlers=previous.bowlers.map(bowler=>({...bowler,hdcpCount:0,scratchCount:0,high:false,pairs:false,paid:false,scores:{g1:null,g2:null,g3:null}}));
+    blank._startNewSession=true;
     try {
       window.BowlingApp.setState(blank);queueSave(blank);await flushSaves();
     } catch(error) { window.BowlingApp.setState(previous);throw error; }
     $('sessionLabel').value='';$('sessionDate').value=new Date().toLocaleDateString('en-CA');
     document.querySelector('[data-tab="registration"]').click();
-    notice('A new blank session is ready.');return {started:true};
+    notice('A new session is ready with the roster and handicaps preserved.');return {started:true};
   }
   window.MonsterPortal = {persist:queueSave,saveNow,saveSession,startFresh,flush:flushSaves,saveConfiguration,savePayment,profileForName};
 
