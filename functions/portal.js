@@ -146,10 +146,17 @@ function findProfileBowler(state={},profile={}) {
     ||bowlers.find(b=>normalizePlayerName(b.name)===normalizePlayerName(profile.name));
 }
 function bowlerScoreTotals(bowler) {
-  if(!bowler)return {games:0,pinfall:0};
-  const values=Array.isArray(bowler.scores)?bowler.scores:Object.values(bowler.scores||{});
-  const scores=values.filter(value=>value!==null&&value!==''&&Number.isFinite(Number(value))).map(Number);
-  return {games:scores.length,pinfall:scores.reduce((sum,value)=>sum+value,0)};
+  if(!bowler)return {games:0,pinfall:0,byGame:[]};
+  const source=bowler.scores||{},values=Array.isArray(source)?source:Array.from({length:7},(_,index)=>source['g'+(index+1)]);
+  const byGame=values.map(value=>value!==null&&value!==''&&Number.isFinite(Number(value))?Number(value):null);
+  const scores=byGame.filter(value=>value!==null);
+  return {games:scores.length,pinfall:scores.reduce((sum,value)=>sum+value,0),byGame};
+}
+function addGameScores(target,values=[]) {
+  values.forEach((value,index)=>{if(value===null||value===undefined)return;target[index]??={pinfall:0,games:0};target[index].pinfall+=value;target[index].games++;});
+}
+function gameAverages(totals=[]) {
+  return totals.map((item,index)=>item?.games?{game:index+1,games:item.games,average:Number((item.pinfall/item.games).toFixed(2))}:null).filter(Boolean);
 }
 function personalAmounts(personal) {
   return {invested:Math.round(Number(personal?.due||0)),won:Math.round(Number(personal?.won||0))};
@@ -220,16 +227,16 @@ async function handler(request) {
       left join public.bowling_user_bowler_links l on l.competition_id=p.competition_id and l.bowler_id=p.id::text and l.user_id=$1
       where p.claimed_user_id=$1 or l.user_id=$1
       order by p.competition_id,(p.claimed_user_id=$1) desc,p.updated_at desc`,[actor.id]);
-    const totals={totalGames:0,totalPinfall:0,moneyInvested:0,moneyWon:0,sessionsPlayed:0},byCompetition=[];
+    const totals={totalGames:0,totalPinfall:0,moneyInvested:0,moneyWon:0,sessionsPlayed:0},totalGamesByPosition=[],byCompetition=[];
     for(const profile of profiles){
-      const item={id:profile.competition_id,name:profile.competition_name,games:0,pinfall:0,moneyInvested:0,moneyWon:0,sessionsPlayed:0};
+      const item={id:profile.competition_id,name:profile.competition_name,games:0,pinfall:0,moneyInvested:0,moneyWon:0,sessionsPlayed:0},itemGamesByPosition=[];
       const currentState=(await pool.query('select data from public.bowling_competition_state where competition_id=$1',[profile.competition_id])).rows[0]?.data||{};
       const currentResults=effectiveResults(currentState,(await pool.query('select data from public.bowling_results where competition_id=$1',[profile.competition_id])).rows[0]?.data||{});
       const currentBowler=findProfileBowler(currentState,profile);
       if(currentBowler){
         const score=bowlerScoreTotals(currentBowler),stored=(await pool.query('select data from public.bowling_personal_results where competition_id=$1 and email=lower($2)',[profile.competition_id,actor.email])).rows[0]?.data;
         const money=personalAmounts(currentState.format==='delarosa-masters-v1'?stored:personalForBowler(currentState,currentResults,currentBowler.id));
-        item.games+=score.games;item.pinfall+=score.pinfall;item.moneyInvested+=money.invested;item.moneyWon+=money.won;
+        item.games+=score.games;item.pinfall+=score.pinfall;addGameScores(itemGamesByPosition,score.byGame);item.moneyInvested+=money.invested;item.moneyWon+=money.won;
         if(score.games||money.invested||money.won)item.sessionsPlayed++;
       }
       const archives=(await pool.query('select state,results,personal from public.bowling_session_archives where competition_id=$1',[profile.competition_id])).rows;
@@ -237,14 +244,15 @@ async function handler(request) {
         const bowler=findProfileBowler(archive.state||{},profile);if(!bowler)continue;
         const score=bowlerScoreTotals(bowler),saved=Array.isArray(archive.personal)?archive.personal.find(entry=>String(entry.email||'').toLowerCase()===actor.email):null;
         const money=personalAmounts(archive.state?.format==='delarosa-masters-v1'?saved?.data:personalForBowler(archive.state,effectiveResults(archive.state,archive.results),bowler.id));
-        item.games+=score.games;item.pinfall+=score.pinfall;item.moneyInvested+=money.invested;item.moneyWon+=money.won;
+        item.games+=score.games;item.pinfall+=score.pinfall;addGameScores(itemGamesByPosition,score.byGame);item.moneyInvested+=money.invested;item.moneyWon+=money.won;
         if(score.games||money.invested||money.won)item.sessionsPlayed++;
       }
-      item.average=item.games?Number((item.pinfall/item.games).toFixed(2)):0;item.net=item.moneyWon-item.moneyInvested;
+      item.average=item.games?Number((item.pinfall/item.games).toFixed(2)):0;item.gameAverages=gameAverages(itemGamesByPosition);item.net=item.moneyWon-item.moneyInvested;
       totals.totalGames+=item.games;totals.totalPinfall+=item.pinfall;totals.moneyInvested+=item.moneyInvested;totals.moneyWon+=item.moneyWon;totals.sessionsPlayed+=item.sessionsPlayed;
+      itemGamesByPosition.forEach((entry,index)=>{if(!entry)return;totalGamesByPosition[index]??={pinfall:0,games:0};totalGamesByPosition[index].pinfall+=entry.pinfall;totalGamesByPosition[index].games+=entry.games;});
       byCompetition.push(item);
     }
-    return response({...totals,average:totals.totalGames?Number((totals.totalPinfall/totals.totalGames).toFixed(2)):0,net:totals.moneyWon-totals.moneyInvested,competitions:byCompetition.sort((a,b)=>a.name.localeCompare(b.name))});
+    return response({...totals,average:totals.totalGames?Number((totals.totalPinfall/totals.totalGames).toFixed(2)):0,gameAverages:gameAverages(totalGamesByPosition),net:totals.moneyWon-totals.moneyInvested,competitions:byCompetition.sort((a,b)=>a.name.localeCompare(b.name))});
   }
   if(route==='/directory'&&request.method==='GET'){
     const q='%'+cleanText(url.searchParams.get('q')||'',120).toLowerCase()+'%';

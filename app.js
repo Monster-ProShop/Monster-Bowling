@@ -154,6 +154,8 @@ function translateText(original) {
   let translated=ES[trimmed];
   if(!translated) translated=trimmed
     .replace(/^Game (\d+) matchups$/,'Enfrentamientos del juego $1')
+    .replace(/^Game (\d+) average$/,'Promedio del juego $1')
+    .replace(/^G(\d+) average$/,'Promedio J$1')
     .replace(/^Standings after game (\d+)$/,'Posiciones después del juego $1')
     .replace(/^Your balance — /,'Su saldo — ')
     .replace(/^Total charges: /,'Cargos totales: ').replace(/ · Paid: /,' · Pagado: ').replace(/ · Outstanding: /,' · Pendiente: ')

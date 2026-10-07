@@ -11,6 +11,9 @@ test('account-wide playing summary aggregates linked profiles and all archives',
   assert.match(api,/bowling_session_archives where competition_id=\$1/);
   assert.match(api,/totalGames/);
   assert.match(api,/moneyInvested/);
+  assert.match(api,/gameAverages:gameAverages\(totalGamesByPosition\)/);
   assert.match(ui,/renderCareerSummary/);
+  assert.match(ui,/Game '\+item\.game\+' average/);
+  assert.match(ui,/G'\+game\+' average/);
   assert.match(html,/data-dashboard-tab="summary"/);
 });
