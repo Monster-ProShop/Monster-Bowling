@@ -89,6 +89,19 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
   async function listCompetitions() {
     return await api('/competitions');
   }
+  function renderCareerSummary(data={}) {
+    const metrics=[['Total games',data.totalGames||0],['Total pinfall',data.totalPinfall||0],['Average',Number(data.average||0).toFixed(2)],['Money invested',dollars(data.moneyInvested)],['Money won',dollars(data.moneyWon)],['Net result',dollars(data.net)]];
+    $('careerSummaryMetrics').innerHTML=metrics.map(([label,value],index)=>'<div class="summary-metric '+(index===5?'profit':'')+'"><span>'+esc(label)+'</span><strong class="'+(index===5?(data.net<0?'balance-negative':data.net>0?'balance-positive':'balance-zero'):'')+'">'+esc(value)+'</strong></div>').join('');
+    const rows=data.competitions||[];
+    $('careerCompetitionBreakdown').innerHTML=rows.length?'<h3>By competition</h3><div class="table-wrap"><table><thead><tr><th>Competition</th><th>Games</th><th>Pinfall</th><th>Average</th><th>Invested</th><th>Won</th><th>Net</th></tr></thead><tbody>'+rows.map(row=>'<tr><td>'+esc(row.name)+'</td><td>'+esc(row.games)+'</td><td>'+esc(row.pinfall)+'</td><td>'+Number(row.average||0).toFixed(2)+'</td><td>'+dollars(row.moneyInvested)+'</td><td>'+dollars(row.moneyWon)+'</td><td class="'+(row.net<0?'balance-negative':row.net>0?'balance-positive':'balance-zero')+'">'+dollars(row.net)+'</td></tr>').join('')+'</tbody></table></div>':'<p class="hint">Link your account to a bowler profile to begin building your summary.</p>';
+    localize();
+  }
+  function showDashboardTab(tab='competitions') {
+    const summary=tab==='summary';
+    $('dashboardCompetitions').classList.toggle('hidden',summary);
+    $('careerSummaryCard').classList.toggle('hidden',!summary);
+    document.querySelectorAll('[data-dashboard-tab]').forEach(button=>button.classList.toggle('active',button.dataset.dashboardTab===tab));
+  }
   async function refreshDashboard() {
     const rows = await listCompetitions();
     competitions=rows;
@@ -96,9 +109,12 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     $('dashboardHeading').textContent = admin ? 'Manage leagues and tournaments' : 'Available leagues and tournaments';
     $('createCompetition').classList.toggle('hidden', !admin);
     $('bowlerLeagues').classList.toggle('hidden',admin);
+    $('userDashboardTabs').classList.toggle('hidden',admin);
     $('usersAccess').classList.toggle('hidden',!superAdmin);
     $('accountEmail').textContent = user.email;
-    const sessions=await Promise.all(rows.map(c=>api('/sessions?competition_id='+encodeURIComponent(c.id))));
+    const [sessions,career]=await Promise.all([Promise.all(rows.map(c=>api('/sessions?competition_id='+encodeURIComponent(c.id)))),admin?Promise.resolve(null):api('/career-summary')]);
+    if(career)renderCareerSummary(career);
+    showDashboardTab('competitions');
     $('competitionCards').innerHTML = rows.map((c,i) => {
       const canManage=!!(admin&&c.can_manage);
       return '<article class="card competition-card" data-competition-search="'+esc([c.name,c.manager_name,c.manager_email,c.country,c.region,c.city,c.bowling_center].filter(Boolean).join(' ').toLowerCase())+'"><h3>' + esc(c.name||'Unnamed competition') + '</h3><p>' + esc(c.kind) +
@@ -544,6 +560,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     });
     $('backDashboard').addEventListener('click',() => void refreshDashboard().catch(fail));
     $('viewerBack').addEventListener('click',() => void refreshDashboard().catch(fail));
+    $('userDashboardTabs').addEventListener('click',event=>{const button=event.target.closest('[data-dashboard-tab]');if(button)showDashboardTab(button.dataset.dashboardTab);});
     $('printSavedSession').addEventListener('click',()=>void printSavedSession().catch(fail));
     $('competitionCards').addEventListener('click',event => {
       const remove=event.target.closest('[data-delete-competition]');

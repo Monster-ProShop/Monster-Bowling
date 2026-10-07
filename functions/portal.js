@@ -136,6 +136,24 @@ function personalForBowler(state,results,bowlerId) {
   const due=charges.reduce((n,x)=>n+x.amount,0),won=winnings.reduce((n,x)=>n+Number(x.amount||0),0),paid=!!bowler.paid,outstanding=paid?0:due;
   return {id:bowler.id,name:bowler.name,paid,charges,due,outstanding,winnings,won,net:won-due,settlement:won-outstanding};
 }
+function normalizePlayerName(value='') {
+  return String(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+}
+function findProfileBowler(state={},profile={}) {
+  const bowlers=state.bowlers||[],membership=String(profile.membership_number||'').trim().toLowerCase();
+  return bowlers.find(b=>b.id===profile.id)
+    ||(membership&&bowlers.find(b=>String(b.membershipNumber||b.membership_number||'').trim().toLowerCase()===membership))
+    ||bowlers.find(b=>normalizePlayerName(b.name)===normalizePlayerName(profile.name));
+}
+function bowlerScoreTotals(bowler) {
+  if(!bowler)return {games:0,pinfall:0};
+  const values=Array.isArray(bowler.scores)?bowler.scores:Object.values(bowler.scores||{});
+  const scores=values.filter(value=>value!==null&&value!==''&&Number.isFinite(Number(value))).map(Number);
+  return {games:scores.length,pinfall:scores.reduce((sum,value)=>sum+value,0)};
+}
+function personalAmounts(personal) {
+  return {invested:Math.round(Number(personal?.due||0)),won:Math.round(Number(personal?.won||0))};
+}
 async function handler(request) {
   const origin = request.headers.get('origin');
   if (origin && origin !== siteOrigin) return response({ error: 'Origin is not allowed' }, 403);
@@ -173,6 +191,38 @@ async function handler(request) {
     return response(rows);
   }
   if (!actor) return response({ error: 'Sign in and verify your email first' }, 401);
+  if(route==='/career-summary'&&request.method==='GET'){
+    const {rows:profiles}=await pool.query(`select distinct on (p.competition_id) p.id,p.competition_id,p.name,p.membership_number,c.name competition_name
+      from public.bowling_roster_profiles p join public.bowling_competitions c on c.id=p.competition_id
+      left join public.bowling_user_bowler_links l on l.competition_id=p.competition_id and l.bowler_id=p.id and l.user_id=$1
+      where p.claimed_user_id=$1 or l.user_id=$1
+      order by p.competition_id,(p.claimed_user_id=$1) desc,p.updated_at desc`,[actor.id]);
+    const totals={totalGames:0,totalPinfall:0,moneyInvested:0,moneyWon:0,sessionsPlayed:0},byCompetition=[];
+    for(const profile of profiles){
+      const item={id:profile.competition_id,name:profile.competition_name,games:0,pinfall:0,moneyInvested:0,moneyWon:0,sessionsPlayed:0};
+      const currentState=(await pool.query('select data from public.bowling_competition_state where competition_id=$1',[profile.competition_id])).rows[0]?.data||{};
+      const currentResults=(await pool.query('select data from public.bowling_results where competition_id=$1',[profile.competition_id])).rows[0]?.data||{};
+      const currentBowler=findProfileBowler(currentState,profile);
+      if(currentBowler){
+        const score=bowlerScoreTotals(currentBowler),stored=(await pool.query('select data from public.bowling_personal_results where competition_id=$1 and email=lower($2)',[profile.competition_id,actor.email])).rows[0]?.data;
+        const money=personalAmounts(stored||personalForBowler(currentState,currentResults,currentBowler.id));
+        item.games+=score.games;item.pinfall+=score.pinfall;item.moneyInvested+=money.invested;item.moneyWon+=money.won;
+        if(score.games||money.invested||money.won)item.sessionsPlayed++;
+      }
+      const archives=(await pool.query('select state,results,personal from public.bowling_session_archives where competition_id=$1',[profile.competition_id])).rows;
+      for(const archive of archives){
+        const bowler=findProfileBowler(archive.state||{},profile);if(!bowler)continue;
+        const score=bowlerScoreTotals(bowler),saved=Array.isArray(archive.personal)?archive.personal.find(entry=>String(entry.email||'').toLowerCase()===actor.email):null;
+        const money=personalAmounts(saved?.data||personalForBowler(archive.state,archive.results,bowler.id));
+        item.games+=score.games;item.pinfall+=score.pinfall;item.moneyInvested+=money.invested;item.moneyWon+=money.won;
+        if(score.games||money.invested||money.won)item.sessionsPlayed++;
+      }
+      item.average=item.games?Number((item.pinfall/item.games).toFixed(2)):0;item.net=item.moneyWon-item.moneyInvested;
+      totals.totalGames+=item.games;totals.totalPinfall+=item.pinfall;totals.moneyInvested+=item.moneyInvested;totals.moneyWon+=item.moneyWon;totals.sessionsPlayed+=item.sessionsPlayed;
+      byCompetition.push(item);
+    }
+    return response({...totals,average:totals.totalGames?Number((totals.totalPinfall/totals.totalGames).toFixed(2)):0,net:totals.moneyWon-totals.moneyInvested,competitions:byCompetition.sort((a,b)=>a.name.localeCompare(b.name))});
+  }
   if(route==='/directory'&&request.method==='GET'){
     const q='%'+cleanText(url.searchParams.get('q')||'',120).toLowerCase()+'%';
     const {rows}=await pool.query(`select id,name,kind,format,country,region,city,bowling_center from public.bowling_competitions
