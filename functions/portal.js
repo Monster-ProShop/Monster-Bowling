@@ -154,6 +154,29 @@ function bowlerScoreTotals(bowler) {
 function personalAmounts(personal) {
   return {invested:Math.round(Number(personal?.due||0)),won:Math.round(Number(personal?.won||0))};
 }
+function traditionalBracketAwards(state={}) {
+  if(state.format==='delarosa-masters-v1')return null;
+  const bowlers=state.bowlers||[],byId=new Map(bowlers.map(b=>[b.id,b])),awards=[];
+  const has=(b,g)=>b&&b.scores?.['g'+g]!==null&&b.scores?.['g'+g]!==''&&Number.isFinite(Number(b.scores?.['g'+g]));
+  const game=(b,g,hdcp)=>Number(b.scores['g'+g])+(hdcp?Number(b.handicap||0):0);
+  const advance=(players,g,hdcp)=>{const active=players.filter(Boolean);if(active.length<=1)return active;if(active.some(b=>!has(b,g)))return null;const top=Math.max(...active.map(b=>game(b,g,hdcp)));return active.filter(b=>game(b,g,hdcp)===top);};
+  for(const type of ['hdcp','scratch'])for(const [index,ids] of (state.brackets?.[type]||[]).entries()){
+    const players=ids.map(id=>byId.get(id)).filter(Boolean),hdcp=type==='hdcp';if(players.length!==8)continue;
+    const first=[0,2,4,6].map(i=>advance(players.slice(i,i+2),1,hdcp));if(first.some(x=>!x))continue;
+    const semis=[advance([...first[0],...first[1]],2,hdcp),advance([...first[2],...first[3]],2,hdcp)];if(semis.some(x=>!x))continue;
+    const finalists=[...semis[0],...semis[1]];if(finalists.some(b=>!has(b,3)))continue;
+    const metrics=b=>[game(b,3,hdcp),[1,2,3].reduce((n,g)=>n+game(b,g,true),0),Math.max(...[1,2,3].map(g=>game(b,g,true)))];
+    const ranked=finalists.map(player=>({player,metrics:metrics(player)})).sort((a,b)=>b.metrics[0]-a.metrics[0]||b.metrics[1]-a.metrics[1]||b.metrics[2]-a.metrics[2]||a.player.name.localeCompare(b.player.name));
+    const places=[Math.round(Number(state.config?.[type+'FirstAmount']||0)*100),Math.round(Number(state.config?.[type+'SecondAmount']||0)*100)];
+    for(let i=0;i<ranked.length&&i<places.length;){let end=i+1;while(end<ranked.length&&ranked[end].metrics.every((v,j)=>v===ranked[i].metrics[j]))end++;const pool=places.slice(i,Math.min(end,places.length)).reduce((n,v)=>n+v,0),share=Math.floor(pool/(end-i)),remainder=pool%(end-i);for(let j=i;j<end;j++)awards.push({name:ranked[j].player.name,category:type,description:(hdcp?'HDCP':'Scratch')+' bracket #'+(index+1)+' · '+(i+1)+(end-i>1?' tie':'')+' ('+ranked[j].metrics[0]+')',amount:share+(j-i<remainder?1:0)});i=end;}
+  }
+  return awards;
+}
+function effectiveResults(state={},results={}) {
+  const bracketAwards=traditionalBracketAwards(state);if(!bracketAwards)return results||{};
+  const other=(results?.awards||[]).filter(a=>!['hdcp','scratch'].includes(a.category));
+  return {...(results||{}),awards:[...bracketAwards,...other]};
+}
 async function handler(request) {
   const origin = request.headers.get('origin');
   if (origin && origin !== siteOrigin) return response({ error: 'Origin is not allowed' }, 403);
@@ -201,11 +224,11 @@ async function handler(request) {
     for(const profile of profiles){
       const item={id:profile.competition_id,name:profile.competition_name,games:0,pinfall:0,moneyInvested:0,moneyWon:0,sessionsPlayed:0};
       const currentState=(await pool.query('select data from public.bowling_competition_state where competition_id=$1',[profile.competition_id])).rows[0]?.data||{};
-      const currentResults=(await pool.query('select data from public.bowling_results where competition_id=$1',[profile.competition_id])).rows[0]?.data||{};
+      const currentResults=effectiveResults(currentState,(await pool.query('select data from public.bowling_results where competition_id=$1',[profile.competition_id])).rows[0]?.data||{});
       const currentBowler=findProfileBowler(currentState,profile);
       if(currentBowler){
         const score=bowlerScoreTotals(currentBowler),stored=(await pool.query('select data from public.bowling_personal_results where competition_id=$1 and email=lower($2)',[profile.competition_id,actor.email])).rows[0]?.data;
-        const money=personalAmounts(stored||personalForBowler(currentState,currentResults,currentBowler.id));
+        const money=personalAmounts(currentState.format==='delarosa-masters-v1'?stored:personalForBowler(currentState,currentResults,currentBowler.id));
         item.games+=score.games;item.pinfall+=score.pinfall;item.moneyInvested+=money.invested;item.moneyWon+=money.won;
         if(score.games||money.invested||money.won)item.sessionsPlayed++;
       }
@@ -213,7 +236,7 @@ async function handler(request) {
       for(const archive of archives){
         const bowler=findProfileBowler(archive.state||{},profile);if(!bowler)continue;
         const score=bowlerScoreTotals(bowler),saved=Array.isArray(archive.personal)?archive.personal.find(entry=>String(entry.email||'').toLowerCase()===actor.email):null;
-        const money=personalAmounts(saved?.data||personalForBowler(archive.state,archive.results,bowler.id));
+        const money=personalAmounts(archive.state?.format==='delarosa-masters-v1'?saved?.data:personalForBowler(archive.state,effectiveResults(archive.state,archive.results),bowler.id));
         item.games+=score.games;item.pinfall+=score.pinfall;item.moneyInvested+=money.invested;item.moneyWon+=money.won;
         if(score.games||money.invested||money.won)item.sessionsPlayed++;
       }
@@ -536,14 +559,14 @@ async function handler(request) {
       pool.query('select data from public.bowling_competition_state where competition_id=$1',[id])
     ]);
     let bowlerId=await resolveBowlerId(actor,id,state.rows[0]?.data);
-    let personalData=personalForBowler(state.rows[0]?.data,result.rows[0]?.data,bowlerId);
+    const resultData=effectiveResults(state.rows[0]?.data,result.rows[0]?.data||{});
+    let personalData=personalForBowler(state.rows[0]?.data,resultData,bowlerId);
     if(state.rows[0]?.data?.format==='delarosa-masters-v1') {
       const linkedBowler=(state.rows[0].data.bowlers||[]).find(b=>b.id===bowlerId);
       personalData=linkedBowler?.email?(await pool.query(
         'select data from public.bowling_personal_results where competition_id=$1 and email=lower($2)',
         [id,linkedBowler.email])).rows[0]?.data||null:null;
     }
-    const resultData=result.rows[0]?.data||null;
     return response({ results: resultsForViewer(resultData,state.rows[0]?.data,await canManage(actor,id)), personal: personalData, bowlerId });
   }
   if (route === '/save' && request.method === 'POST') {
