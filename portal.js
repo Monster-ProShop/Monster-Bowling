@@ -306,6 +306,12 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
   async function openSavedSession(id) {
     const result=await api('/session?id='+encodeURIComponent(id));
     const rows=await listCompetitions(), competition=rows.find(c=>c.id===result.competitionId);
+    if(competition?.format==='delarosa'||result.results?.format==='delarosa-masters-v1'){
+      const handoffToken=await activeToken();
+      sessionStorage.setItem('dlr-auth-handoff',JSON.stringify({token:handoffToken,user,createdAt:Date.now()}));
+      location.href='/DeLaRosaMasters/?competition='+encodeURIComponent(result.competitionId)+'&session='+encodeURIComponent(result.id);
+      return;
+    }
     current=competition||{id:result.competitionId,name:'Competition'};
     $('viewerCompetition').textContent=(competition?.name||'Competition')+' › '+result.label;
     renderViewer(result.results,result.personal,{sessionId:result.id,date:String(result.date).slice(0,10)});

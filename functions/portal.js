@@ -427,7 +427,7 @@ async function handler(request) {
     }
     const results=resultsForViewer(rows[0].results||{},rows[0].state,await canManage(actor,rows[0].competition_id));
     return response({id:rows[0].id,competitionId:rows[0].competition_id,label:rows[0].label,
-      date:rows[0].session_date,results,personal});
+      date:rows[0].session_date,results,personal,bowlerId});
   }
   if (route === '/sessions' && request.method === 'POST') {
     const body=await bodyJson(request);
