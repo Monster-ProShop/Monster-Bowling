@@ -508,10 +508,14 @@ async function handler(request) {
           (body.state.bowlers||[]).some(next=>!persistedById.has(next.id)&&([0,1,2,3].some(index=>next.scores?.[index]!=null)||['satEarly','satLate','scratchEarly','scratchLate','satHigh'].some(key=>next.events?.[key])));
         if(changedLockedData){await db.query('rollback');return response({error:'Saturday scores and brackets are locked. Reload and add Sunday information only.'},409);}
       }
+      const scoreEntries=scores=>Array.isArray(scores)
+        ? scores.map((value,index)=>[String(index),value])
+        : Object.entries(scores&&typeof scores==='object'?scores:{});
+      const scoreValue=(scores,key)=>Array.isArray(scores)?scores[Number(key)]:scores?.[key];
       const clearsSavedScore=body.state.bowlers.some(b=>{
         const old=persistedById.get(b.id);
-        return old?.scores?.some((score,index)=>score!==null&&score!==''&&score!==undefined&&
-          (b.scores?.[index]===null||b.scores?.[index]===''||b.scores?.[index]===undefined));
+        return scoreEntries(old?.scores).some(([key,score])=>score!==null&&score!==''&&score!==undefined&&
+          (scoreValue(b.scores,key)===null||scoreValue(b.scores,key)===''||scoreValue(b.scores,key)===undefined));
       });
       if(clearsSavedScore){
         await db.query('rollback');

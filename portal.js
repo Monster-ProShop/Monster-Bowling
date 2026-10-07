@@ -341,6 +341,19 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     if(saveJob) throw new Error('Neon did not confirm the save.');
     return true;
   }
+  async function saveNow(section) {
+    if(!current||!admin)throw new Error('Manager access required.');
+    const local=window.BowlingApp.getState();
+    queueSave(local);
+    await flushSaves();
+    const stored=await api('/state?id='+encodeURIComponent(current.id));
+    const matches=section==='brackets'
+      ? stored?.generated===local.generated&&JSON.stringify(stored?.brackets||{})===JSON.stringify(local.brackets||{})
+      : JSON.stringify((stored?.bowlers||[]).map(b=>[b.id,b.scores]))===JSON.stringify((local.bowlers||[]).map(b=>[b.id,b.scores]));
+    if(!matches)throw new Error('Neon did not return the latest '+section+'. Keep this page open and try again.');
+    notice((section==='brackets'?'Brackets':'Scores')+' saved and verified in Neon.');
+    return {saved:true};
+  }
   async function saveConfiguration(config) {
     if(!current||!admin) throw new Error('Open a competition as administrator first.');
     const result=await api('/config?id='+encodeURIComponent(current.id),'POST',{config});
@@ -400,7 +413,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     document.querySelector('[data-tab="registration"]').click();
     notice('A new blank session is ready.');return {started:true};
   }
-  window.MonsterPortal = {persist:queueSave,saveSession,startFresh,flush:flushSaves,saveConfiguration,savePayment,profileForName};
+  window.MonsterPortal = {persist:queueSave,saveNow,saveSession,startFresh,flush:flushSaves,saveConfiguration,savePayment,profileForName};
 
   async function boot() {
     if (!cfg.url || !cfg.apiUrl) {

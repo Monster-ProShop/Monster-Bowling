@@ -113,6 +113,8 @@ const ES = {
   'Total winnings':'Premios totales','Total won':'Total ganado','Paid:':'Pagado:','Outstanding:':'Pendiente:',
   'Configuration changed. Select Save payout configuration to keep it.':'La configuración cambió. Seleccione Guardar configuración de premios para conservarla.',
   'Changes not saved yet.':'Los cambios todavía no se han guardado.','Saving…':'Guardando…','Saved to Neon.':'Guardado en Neon.',
+  'Save brackets':'Guardar brackets','Save scores':'Guardar puntuaciones','Brackets saved and verified in Neon.':'Brackets guardados y verificados en Neon.','Scores saved and verified in Neon.':'Puntuaciones guardadas y verificadas en Neon.',
+  'Saving brackets…':'Guardando brackets…','Saving scores…':'Guardando puntuaciones…','The brackets were not saved.':'No se guardaron los brackets.','The scores were not saved.':'No se guardaron las puntuaciones.',
   'Could not save.':'No se pudo guardar.','Try again.':'Inténtelo de nuevo.','Payout configuration saved.':'Configuración de premios guardada.',
   'Payout configuration was not saved.':'No se guardó la configuración de premios.','Check the fixed payout amounts.':'Revise las cantidades fijas de los premios.',
   'Check the payout configuration.':'Revise la configuración de premios.','Check the name, handicap and bracket counts.':'Revise el nombre, el hándicap y las cantidades de brackets.',
@@ -687,6 +689,21 @@ function setup() {
     const total=state.brackets.hdcp.length+state.brackets.scratch.length;
     status(total?total+' bracket'+(total===1?'':'s')+' generated.':'No brackets generated. At least eight different bowlers must join an event.');
   });
+  const saveSection=async(section)=>{
+    const brackets=section==='brackets',button=document.getElementById(brackets?'saveBrackets':'saveScores'),saveState=document.getElementById(brackets?'bracketSaveState':'scoreSaveState');
+    button.disabled=true;saveState.textContent=brackets?'Saving brackets…':'Saving scores…';status(saveState.textContent);
+    try {
+      persist();
+      if(globalThis.MONSTER_PORTAL_MODE)await globalThis.MonsterPortal.saveNow(section);
+      else localStorage.setItem(KEY,JSON.stringify(state));
+      saveState.textContent=brackets?'Brackets saved and verified in Neon.':'Scores saved and verified in Neon.';status(saveState.textContent);
+    } catch(error) {
+      const prefix=brackets?'The brackets were not saved.':'The scores were not saved.';
+      saveState.textContent=prefix+' '+(error.message||'Try again.');status(saveState.textContent);
+    } finally {button.disabled=false;translateUI();}
+  };
+  document.getElementById('saveBrackets').addEventListener('click',()=>void saveSection('brackets'));
+  document.getElementById('saveScores').addEventListener('click',()=>void saveSection('scores'));
   document.getElementById('generateHigh').addEventListener('click',()=>{state.highGenerated=true;persist();render();status('High Game standings updated.');});
   const pairMessage=(id)=>{
     const input=document.getElementById('pairName'+id),help=document.getElementById('pairHelp'+id),value=input.value.trim().toLocaleLowerCase();
