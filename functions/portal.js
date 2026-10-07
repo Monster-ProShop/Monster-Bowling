@@ -183,7 +183,7 @@ async function handler(request) {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204,
     headers: { 'access-control-allow-origin': siteOrigin,
       'access-control-allow-headers': 'authorization,content-type',
-      'access-control-allow-methods': 'GET,POST,OPTIONS', 'vary': 'Origin' } });
+      'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS', 'vary': 'Origin' } });
   const url = new URL(request.url), route = url.pathname.replace(/\/$/, '') || '/';
   if (route === '/health' && request.method === 'GET') return response({ ok: true });
   let actor = null;
