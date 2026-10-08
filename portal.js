@@ -1,4 +1,4 @@
-import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bundle';
+import { createAuthClient } from 'https://esm.sh/@neondatabase/auth@0.5.0-beta?bundle';
 
 (function () {
   const cfg = window.MONSTER_NEON || {};
@@ -17,7 +17,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     $('portalLogin').classList.remove('hidden');
     localize();
   };
-  const newClient = () => createClient(cfg.url,{auth:{persistSession:true,autoRefreshToken:true,fetchOptions:{credentials:'include',cache:'no-store'}}});
+  const newClient = () => ({auth:createAuthClient(cfg.authUrl)});
   async function resetExpiredSession() {
     if (!needsSessionReset) return;
     try { await client?.auth.signOut(); } catch {}
