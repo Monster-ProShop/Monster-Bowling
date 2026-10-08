@@ -221,6 +221,14 @@ async function handler(request) {
     return response(rows);
   }
   if (!actor) return response({ error: 'Sign in and verify your email first' }, 401);
+  if(route==='/places/autocomplete'&&request.method==='GET'){
+    if(!['manager','superadmin'].includes(actor.role))return response({error:'Manager access required'},403);
+    const query=cleanText(url.searchParams.get('q'),120);if(query.length<3)return response([]);
+    const key=process.env.GEOAPIFY_API_KEY;if(!key)return response({error:'Bowling center search is awaiting its Geoapify key.'},503);
+    const endpoint='https://api.geoapify.com/v1/geocode/autocomplete?format=geojson&type=amenity&limit=6&lang=en&text='+encodeURIComponent(query)+'&apiKey='+encodeURIComponent(key);
+    const found=await fetch(endpoint,{headers:{accept:'application/json'}});if(!found.ok)return response({error:'Location search is temporarily unavailable.'},502);
+    const data=await found.json();return response((data.features||[]).map(feature=>{const p=feature.properties||{},coordinates=feature.geometry?.coordinates||[];return{name:p.name||p.address_line1||query,addressLine1:p.address_line1||'',formattedAddress:p.formatted||'',city:p.city||p.county||'',region:p.state||'',country:p.country||'',placeId:p.place_id||p.datasource?.raw?.osm_id||'',latitude:p.lat??coordinates[1]??null,longitude:p.lon??coordinates[0]??null};}));
+  }
   if(route==='/career-summary'&&request.method==='GET'){
     const {rows:profiles}=await pool.query(`select distinct on (p.competition_id) p.id,p.competition_id,p.name,p.membership_number,c.name competition_name
       from public.bowling_roster_profiles p join public.bowling_competitions c on c.id=p.competition_id

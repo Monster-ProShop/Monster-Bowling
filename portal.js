@@ -77,35 +77,34 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     if(user){sessionExpired=false;updateAuthButton();if(expiredNoticeVisible())notice('');}
     return data;
   }
-  let googlePlacesPromise=null;
+  const placeSearchTimers={};
   function locationPayload(prefix='competition') {
     return {bowlingCenter:$(prefix+'Center').value.trim(),country:$(prefix+'Country').value,region:$(prefix+'Region').value,city:$(prefix+'City').value,formattedAddress:$(prefix+'Address').value,googlePlaceId:$(prefix+'PlaceId').value,latitude:$(prefix+'Latitude').value,longitude:$(prefix+'Longitude').value};
   }
   function fillLocation(prefix,place={}) {
-    const components=place.address_components||[],component=(...types)=>components.find(item=>types.some(type=>item.types?.includes(type)))?.long_name||'';
-    $(prefix+'Center').value=place.name||$(prefix+'Center').value;
-    $(prefix+'Country').value=component('country');
-    $(prefix+'Region').value=component('administrative_area_level_1');
-    $(prefix+'City').value=component('locality','postal_town','administrative_area_level_2');
-    $(prefix+'Address').value=place.formatted_address||'';
-    $(prefix+'PlaceId').value=place.place_id||'';
-    $(prefix+'Latitude').value=place.geometry?.location?.lat?.()??'';
-    $(prefix+'Longitude').value=place.geometry?.location?.lng?.()??'';
-    $(prefix+'LocationStatus').textContent=[place.formatted_address,$(prefix+'City').value,$(prefix+'Region').value,$(prefix+'Country').value].filter(Boolean).filter((value,index,array)=>array.indexOf(value)===index).join(' · ');
+    $(prefix+'Center').value=place.name||place.addressLine1||$(prefix+'Center').value;
+    $(prefix+'Country').value=place.country||'';$(prefix+'Region').value=place.region||'';$(prefix+'City').value=place.city||'';
+    $(prefix+'Address').value=place.formattedAddress||'';$(prefix+'PlaceId').value=place.placeId||'';
+    $(prefix+'Latitude').value=place.latitude??'';$(prefix+'Longitude').value=place.longitude??'';
+    $(prefix+'LocationStatus').textContent=place.formattedAddress||[place.city,place.region,place.country].filter(Boolean).join(' · ');
+    $(prefix+'LocationSuggestions').innerHTML='';
   }
-  function attachPlacesAutocomplete(prefix) {
-    const input=$(prefix+'Center');if(!input||input.dataset.placesReady)return;
-    const autocomplete=new google.maps.places.Autocomplete(input,{fields:['name','formatted_address','address_components','place_id','geometry'],types:['establishment']});
-    autocomplete.addListener('place_changed',()=>{const place=autocomplete.getPlace();if(place?.place_id)fillLocation(prefix,place);});
-    input.addEventListener('input',()=>{$(prefix+'PlaceId').value='';$(prefix+'LocationStatus').textContent='Select a Google Maps suggestion to fill the city, state and country.';});
+  async function searchPlaces(prefix,query) {
+    const suggestions=$(prefix+'LocationSuggestions');$(prefix+'LocationStatus').textContent='Searching locations…';
+    try {
+      const rows=await api('/places/autocomplete?q='+encodeURIComponent(query));
+      suggestions._places=rows;
+      suggestions.innerHTML=rows.length?rows.map((place,index)=>'<button type="button" class="place-suggestion" data-place-index="'+index+'"><strong>'+esc(place.name||place.addressLine1||query)+'</strong><small>'+esc(place.formattedAddress||'')+'</small></button>').join(''):'<p class="hint">No matching bowling centers found.</p>';
+      $(prefix+'LocationStatus').textContent=rows.length?'Select the correct bowling center below.':'Try the bowling center name with its city.';localize();
+    } catch(error){suggestions.innerHTML='';$(prefix+'LocationStatus').textContent=error.message;localize();}
+  }
+  function setupPlaceSearch(prefix) {
+    const input=$(prefix+'Center'),suggestions=$(prefix+'LocationSuggestions');if(!input||input.dataset.placesReady)return;
+    input.addEventListener('input',()=>{clearTimeout(placeSearchTimers[prefix]);$(prefix+'PlaceId').value='';const query=input.value.trim();if(query.length<3){suggestions.innerHTML='';$(prefix+'LocationStatus').textContent='Enter at least three characters to search for a bowling center.';return;}placeSearchTimers[prefix]=setTimeout(()=>void searchPlaces(prefix,query),400);});
+    suggestions.addEventListener('click',event=>{const button=event.target.closest('[data-place-index]');if(button)fillLocation(prefix,suggestions._places?.[Number(button.dataset.placeIndex)]||{});});
     input.dataset.placesReady='true';
   }
-  async function loadGooglePlaces() {
-    const key=String(cfg.googleMapsApiKey||'').trim();
-    if(!key){['competition','editCompetition'].forEach(prefix=>{$(prefix+'LocationStatus').textContent='Google Maps location suggestions need to be activated by the site administrator.';});return;}
-    if(!googlePlacesPromise)googlePlacesPromise=new Promise((resolve,reject)=>{window.__monsterGooglePlacesReady=resolve;const script=document.createElement('script');script.src='https://maps.googleapis.com/maps/api/js?key='+encodeURIComponent(key)+'&libraries=places&loading=async&callback=__monsterGooglePlacesReady&v=weekly';script.async=true;script.onerror=()=>reject(new Error('Google Maps could not load.'));document.head.append(script);});
-    try{await googlePlacesPromise;attachPlacesAutocomplete('competition');attachPlacesAutocomplete('editCompetition');}catch(error){['competition','editCompetition'].forEach(prefix=>{$(prefix+'LocationStatus').textContent=error.message;});}
-  }
+  function setupGeoapifyPlaces(){setupPlaceSearch('competition');setupPlaceSearch('editCompetition');}
 
   function renderCompetitionOptions(rows, selected) {
     const select = $('loginCompetition');
@@ -492,7 +491,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       return;
     }
     client = newClient();
-    void loadGooglePlaces();
+    setupGeoapifyPlaces();
     $('sessionDate').value=new Date().toLocaleDateString('en-CA');
     if('serviceWorker' in navigator) await navigator.serviceWorker.register('/sw.js');
     let installPrompt=null;

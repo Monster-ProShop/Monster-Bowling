@@ -12,12 +12,13 @@ test('payout configuration initializes a missing competition state',()=>{
   assert.doesNotMatch(api,/if\(!rowCount\) return response\(\{error:'Competition state not found'/);
 });
 
-test('competition details use Google Places and save selected location details',()=>{
+test('competition details use Geoapify and save selected location details',()=>{
   const ui=read('portal.js'),html=read('index.html'),migration=read('neon/006_google_places_locations.sql');
-  assert.match(ui,/google\.maps\.places\.Autocomplete/);
-  assert.match(ui,/formatted_address/);
-  assert.match(ui,/address_components/);
+  assert.match(ui,/places\/autocomplete/);
+  assert.match(ui,/setupGeoapifyPlaces/);
+  assert.match(read('functions/portal.js'),/GEOAPIFY_API_KEY/);
   assert.match(html,/id="editCompetitionForm"/);
   assert.match(html,/Search for the bowling center name/);
+  assert.match(html,/powered by <a href="https:\/\/www\.geoapify\.com\/"/);
   assert.match(migration,/google_place_id/);
 });
