@@ -77,6 +77,35 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     if(user){sessionExpired=false;updateAuthButton();if(expiredNoticeVisible())notice('');}
     return data;
   }
+  let googlePlacesPromise=null;
+  function locationPayload(prefix='competition') {
+    return {bowlingCenter:$(prefix+'Center').value.trim(),country:$(prefix+'Country').value,region:$(prefix+'Region').value,city:$(prefix+'City').value,formattedAddress:$(prefix+'Address').value,googlePlaceId:$(prefix+'PlaceId').value,latitude:$(prefix+'Latitude').value,longitude:$(prefix+'Longitude').value};
+  }
+  function fillLocation(prefix,place={}) {
+    const components=place.address_components||[],component=(...types)=>components.find(item=>types.some(type=>item.types?.includes(type)))?.long_name||'';
+    $(prefix+'Center').value=place.name||$(prefix+'Center').value;
+    $(prefix+'Country').value=component('country');
+    $(prefix+'Region').value=component('administrative_area_level_1');
+    $(prefix+'City').value=component('locality','postal_town','administrative_area_level_2');
+    $(prefix+'Address').value=place.formatted_address||'';
+    $(prefix+'PlaceId').value=place.place_id||'';
+    $(prefix+'Latitude').value=place.geometry?.location?.lat?.()??'';
+    $(prefix+'Longitude').value=place.geometry?.location?.lng?.()??'';
+    $(prefix+'LocationStatus').textContent=[place.formatted_address,$(prefix+'City').value,$(prefix+'Region').value,$(prefix+'Country').value].filter(Boolean).filter((value,index,array)=>array.indexOf(value)===index).join(' · ');
+  }
+  function attachPlacesAutocomplete(prefix) {
+    const input=$(prefix+'Center');if(!input||input.dataset.placesReady)return;
+    const autocomplete=new google.maps.places.Autocomplete(input,{fields:['name','formatted_address','address_components','place_id','geometry'],types:['establishment']});
+    autocomplete.addListener('place_changed',()=>{const place=autocomplete.getPlace();if(place?.place_id)fillLocation(prefix,place);});
+    input.addEventListener('input',()=>{$(prefix+'PlaceId').value='';$(prefix+'LocationStatus').textContent='Select a Google Maps suggestion to fill the city, state and country.';});
+    input.dataset.placesReady='true';
+  }
+  async function loadGooglePlaces() {
+    const key=String(cfg.googleMapsApiKey||'').trim();
+    if(!key){['competition','editCompetition'].forEach(prefix=>{$(prefix+'LocationStatus').textContent='Google Maps location suggestions need to be activated by the site administrator.';});return;}
+    if(!googlePlacesPromise)googlePlacesPromise=new Promise((resolve,reject)=>{window.__monsterGooglePlacesReady=resolve;const script=document.createElement('script');script.src='https://maps.googleapis.com/maps/api/js?key='+encodeURIComponent(key)+'&libraries=places&loading=async&callback=__monsterGooglePlacesReady&v=weekly';script.async=true;script.onerror=()=>reject(new Error('Google Maps could not load.'));document.head.append(script);});
+    try{await googlePlacesPromise;attachPlacesAutocomplete('competition');attachPlacesAutocomplete('editCompetition');}catch(error){['competition','editCompetition'].forEach(prefix=>{$(prefix+'LocationStatus').textContent=error.message;});}
+  }
 
   function renderCompetitionOptions(rows, selected) {
     const select = $('loginCompetition');
@@ -396,9 +425,20 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     event.preventDefault();
     const name = $('competitionName').value.trim(), kind = $('competitionKind').value,format=$('competitionFormat').value;
     if (!name) return;
-    const data = await api('/competitions','POST',{name,kind,format,managerName:$('competitionManagerName').value,country:$('competitionCountry').value,region:$('competitionRegion').value,city:$('competitionCity').value,bowlingCenter:$('competitionCenter').value});
+    const data = await api('/competitions','POST',{name,kind,format,managerName:$('competitionManagerName').value,...locationPayload()});
     $('createCompetition').reset();
     await openCompetition(data.id);
+  }
+  function showCompetitionEditor(c) {
+    $('editCompetitionId').value=c.id;$('editCompetitionName').value=c.name||'';$('editCompetitionKind').value=c.kind||'league';
+    $('editCompetitionCenter').value=c.bowling_center||'';$('editCompetitionCountry').value=c.country||'';$('editCompetitionRegion').value=c.region||'';$('editCompetitionCity').value=c.city||'';$('editCompetitionAddress').value=c.formatted_address||'';$('editCompetitionPlaceId').value=c.google_place_id||'';$('editCompetitionLatitude').value=c.latitude??'';$('editCompetitionLongitude').value=c.longitude??'';
+    $('editCompetitionLocationStatus').textContent=c.formatted_address||[c.city,c.region,c.country].filter(Boolean).join(' · ')||'Search for and select the bowling center.';
+    $('editCompetitionForm').classList.remove('hidden');$('editCompetitionForm').scrollIntoView({behavior:'smooth'});$('editCompetitionName').focus();
+  }
+  async function saveCompetitionDetails(event) {
+    event.preventDefault();const competitionId=$('editCompetitionId').value;
+    await api('/competitions/edit','POST',{competitionId,name:$('editCompetitionName').value.trim(),kind:$('editCompetitionKind').value,...locationPayload('editCompetition')});
+    $('editCompetitionForm').classList.add('hidden');notice('Competition details saved.');await refreshDashboard();
   }
   async function deleteCompetition(button) {
     if(!admin)throw new Error('Manager access required');
@@ -452,6 +492,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       return;
     }
     client = newClient();
+    void loadGooglePlaces();
     $('sessionDate').value=new Date().toLocaleDateString('en-CA');
     if('serviceWorker' in navigator) await navigator.serviceWorker.register('/sw.js');
     let installPrompt=null;
@@ -579,7 +620,7 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
       if (button) void openCompetition(button.dataset.open).catch(fail);
       const roster=event.target.closest('[data-roster]');if(roster)void openRosterManager(roster.dataset.roster).catch(fail);
       const linked=event.target.closest('[data-linked-accounts]');if(linked)void openLinkedAccounts(linked.dataset.linkedAccounts).catch(fail);
-      const editCompetition=event.target.closest('[data-edit-competition]');if(editCompetition)void (async()=>{const c=competitions.find(x=>x.id===editCompetition.dataset.editCompetition),name=prompt('Competition name',c.name);if(!name)return;const country=prompt('Country',c.country||'')??c.country,region=prompt('State / Region',c.region||'')??c.region,city=prompt('City',c.city||'')??c.city,bowlingCenter=prompt('Bowling center',c.bowling_center||'')??c.bowling_center;await api('/competitions/edit','POST',{competitionId:c.id,name,kind:c.kind,country,region,city,bowlingCenter});await refreshDashboard();})().catch(fail);
+      const editCompetition=event.target.closest('[data-edit-competition]');if(editCompetition){const c=competitions.find(x=>x.id===editCompetition.dataset.editCompetition);if(c)showCompetitionEditor(c);}
       const removeLeague=event.target.closest('[data-remove-league]');if(removeLeague)void api('/memberships','DELETE',{competitionId:removeLeague.dataset.removeLeague}).then(refreshDashboard).catch(fail);
       const previous=event.target.closest('[data-previous]');if(previous)void (async()=>{const rows=await api('/sessions?competition_id='+encodeURIComponent(previous.dataset.previous)+'&all=1'),currentYear=new Date().getFullYear(),older=rows.filter(x=>Number(String(x.session_date).slice(0,4))!==currentYear),groups=Object.groupBy?Object.groupBy(older,x=>String(x.session_date).slice(0,4)):older.reduce((o,x)=>((o[String(x.session_date).slice(0,4)]??=[]).push(x),o),{});document.querySelector('[data-previous-list="'+previous.dataset.previous+'"]').innerHTML=Object.entries(groups).sort((a,b)=>b[0]-a[0]).map(([year,list])=>'<h4>'+esc(year)+'</h4>'+list.map(x=>'<div class="session-row"><span>'+esc(x.label)+'<br><small>'+esc(String(x.session_date).slice(0,10))+(x.bracket_details_purged_at?' · Financial archive':'')+'</small></span><button class="secondary" data-session="'+esc(x.id)+'">View</button></div>').join('')).join('')||'<p class="hint">No previous years.</p>';})().catch(fail);
       const session = event.target.closest('[data-session]');
@@ -587,6 +628,8 @@ import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bu
     });
     $('leagueDirectorySearch').addEventListener('input',()=>void searchDirectory().catch(fail));
     $('leagueDirectoryResults').addEventListener('click',event=>{const button=event.target.closest('[data-add-league]');if(!button)return;void api('/memberships','POST',{competitionId:button.dataset.addLeague}).then(refreshDashboard).catch(fail);});
+    $('editCompetitionForm').addEventListener('submit',event=>void saveCompetitionDetails(event).catch(fail));
+    $('cancelCompetitionEdit').addEventListener('click',()=>$('editCompetitionForm').classList.add('hidden'));
     $('closeRosterManager').addEventListener('click',()=>$('rosterManager').classList.add('hidden'));
     $('closeLinkedAccounts').addEventListener('click',()=>$('linkedAccountsManager').classList.add('hidden'));
     $('linkedAccountsTable').addEventListener('click',event=>{const save=event.target.closest('[data-save-link]'),unlink=event.target.closest('[data-unlink]'),button=save||unlink;if(!button)return;const profileId=button.dataset.saveLink||button.dataset.unlink,input=document.querySelector('[data-link-email="'+CSS.escape(profileId)+'"]'),email=unlink?'':input.value.trim();button.disabled=true;void api('/roster/link-account','POST',{competitionId:rosterCompetition.id,profileId,email}).then(()=>{notice(email?'Bowler account link saved.':'Bowler account unlinked.');return openLinkedAccounts(rosterCompetition.id)}).catch(error=>{button.disabled=false;fail(error)});});

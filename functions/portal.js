@@ -210,7 +210,7 @@ async function handler(request) {
   }
   if (route === '/competitions' && request.method === 'GET') {
     if(!actor)return response([]);
-    const columns='c.id,c.name,c.kind,c.format,c.status,c.country,c.region,c.city,c.bowling_center,c.manager_name,c.manager_email,c.owner_user_id,c.created_at';
+    const columns='c.id,c.name,c.kind,c.format,c.status,c.country,c.region,c.city,c.bowling_center,c.formatted_address,c.google_place_id,c.latitude,c.longitude,c.manager_name,c.manager_email,c.owner_user_id,c.created_at';
     const { rows } = await pool.query(actor?.role==='superadmin'
       ? `select ${columns},true can_manage from public.bowling_competitions c order by c.created_at desc`
       : actor?.role==='manager'
@@ -304,15 +304,15 @@ async function handler(request) {
     if (typeof body.name !== 'string' || !body.name.trim() || body.name.length > 120 || !['league','tournament'].includes(body.kind)||!['traditional','delarosa'].includes(body.format||'traditional'))
       return response({ error: 'Invalid competition' }, 400);
     const { rows } = await pool.query(`insert into public.bowling_competitions
-      (name,kind,format,owner_user_id,manager_email,manager_name,country,region,city,bowling_center) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id`,
-      [body.name.trim(),body.kind,body.format||'traditional',actor.id,actor.email,cleanText(body.managerName),cleanText(body.country),cleanText(body.region),cleanText(body.city),cleanText(body.bowlingCenter)]);
+      (name,kind,format,owner_user_id,manager_email,manager_name,country,region,city,bowling_center,formatted_address,google_place_id,latitude,longitude) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) returning id`,
+      [body.name.trim(),body.kind,body.format||'traditional',actor.id,actor.email,cleanText(body.managerName),cleanText(body.country),cleanText(body.region),cleanText(body.city),cleanText(body.bowlingCenter),cleanText(body.formattedAddress),cleanText(body.googlePlaceId),body.latitude!==''&&body.latitude!=null&&Number.isFinite(Number(body.latitude))?Number(body.latitude):null,body.longitude!==''&&body.longitude!=null&&Number.isFinite(Number(body.longitude))?Number(body.longitude):null]);
     await pool.query('insert into public.bowling_manager_assignments(user_id,competition_id) values($1,$2) on conflict do nothing',[actor.id,rows[0].id]);
     return response(rows[0],201);
   }
   if(route==='/competitions/edit'&&request.method==='POST'){
     const body=await bodyJson(request);if(!uuid.test(String(body.competitionId))||!await canManage(actor,body.competitionId))return response({error:'Manager access required'},403);
-    await pool.query(`update public.bowling_competitions set name=$2,kind=$3,country=$4,region=$5,city=$6,bowling_center=$7,updated_at=now() where id=$1`,
-      [body.competitionId,cleanText(body.name),body.kind==='tournament'?'tournament':'league',cleanText(body.country),cleanText(body.region),cleanText(body.city),cleanText(body.bowlingCenter)]);return response({saved:true});
+    await pool.query(`update public.bowling_competitions set name=$2,kind=$3,country=$4,region=$5,city=$6,bowling_center=$7,formatted_address=$8,google_place_id=$9,latitude=$10,longitude=$11,updated_at=now() where id=$1`,
+      [body.competitionId,cleanText(body.name),body.kind==='tournament'?'tournament':'league',cleanText(body.country),cleanText(body.region),cleanText(body.city),cleanText(body.bowlingCenter),cleanText(body.formattedAddress),cleanText(body.googlePlaceId),body.latitude!==''&&body.latitude!=null&&Number.isFinite(Number(body.latitude))?Number(body.latitude):null,body.longitude!==''&&body.longitude!=null&&Number.isFinite(Number(body.longitude))?Number(body.longitude):null]);return response({saved:true});
   }
   if(route==='/competitions/delete'&&request.method==='POST') {
     const body=await bodyJson(request);
@@ -525,9 +525,8 @@ async function handler(request) {
     const body=await bodyJson(request);
     if(!body.config||typeof body.config!=='object'||Array.isArray(body.config))
       return response({error:'Invalid payout configuration'},400);
-    const {rowCount}=await pool.query(`update public.bowling_competition_state
-      set data=jsonb_set(data,'{config}',$2::jsonb,true),updated_at=now() where competition_id=$1`,[id,body.config]);
-    if(!rowCount) return response({error:'Competition state not found'},404);
+    await pool.query(`insert into public.bowling_competition_state(competition_id,data) values($1,jsonb_build_object('config',$2::jsonb))
+      on conflict(competition_id) do update set data=jsonb_set(bowling_competition_state.data,'{config}',$2::jsonb,true),updated_at=now()`,[id,body.config]);
     return response({saved:true});
   }
   if (route === '/payment' && request.method === 'POST') {
