@@ -1,12 +1,14 @@
 import { Pool } from 'pg';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import webpush from 'web-push';
+import { leagueRoute, syncLeagueBracketScores } from './league.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 5 });
 pool.on('error', error => console.error('Idle database connection error:', error.message));
 const authUrl = process.env.NEON_AUTH_BASE_URL?.replace(/\/$/, '');
 const jwks = createRemoteJWKSet(new URL(process.env.NEON_AUTH_JWKS_URL));
 const siteOrigin = 'https://brackets.prodrillos.com';
+const allowedOrigins = new Set([siteOrigin, 'https://monster-proshop.github.io', 'https://tournaments.prodrillos.com']);
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 if(process.env.VAPID_PUBLIC_KEY&&process.env.VAPID_PRIVATE_KEY)
   webpush.setVapidDetails(process.env.VAPID_SUBJECT||'mailto:monsterproshop@outlook.com',process.env.VAPID_PUBLIC_KEY,process.env.VAPID_PRIVATE_KEY);
@@ -186,7 +188,7 @@ function effectiveResults(state={},results={}) {
 }
 async function handler(request) {
   const origin = request.headers.get('origin');
-  if (origin && origin !== siteOrigin) return response({ error: 'Origin is not allowed' }, 403);
+  if (origin && !allowedOrigins.has(origin)) return response({ error: 'Origin is not allowed' }, 403);
   if (request.method === 'OPTIONS') return new Response(null, { status: 204,
     headers: { 'access-control-allow-origin': siteOrigin,
       'access-control-allow-headers': 'authorization,content-type',
@@ -196,6 +198,7 @@ async function handler(request) {
   let actor = null;
   try { actor = await identity(request); }
   catch { return response({ error: 'Invalid or expired session' }, 401); }
+  if (route.startsWith('/league/')) return leagueRoute({request,url,route,actor,pool,canManage,canAccess,bodyJson,response});
   if(route==='/me'&&request.method==='GET') {
     if(!actor)return response({error:'Sign in first'},401);
     return response({email:actor.email,role:actor.role});
@@ -647,6 +650,7 @@ async function handler(request) {
           [id,item.email.trim().toLowerCase(),item.data]);
       }
       await ensureRosterProfiles(db,id,body.state.bowlers);
+      await syncLeagueBracketScores(db,id,body.state,actor.id,startingNewSession);
       await db.query('commit');
       if(changed.length&&/^\d{4}-\d{2}-\d{2}$/.test(body.eventDate||'')) {
         const ids=changed.map(b=>b.id), names=Object.fromEntries(changed.map(b=>[b.id,b.name]));
@@ -667,7 +671,11 @@ async function handler(request) {
 }
 
 export default { async fetch(request) {
-  try { return await handler(request); }
-  catch (error) { console.error(error); return response({ error: 'Server error' }, 500); }
+  let result;
+  try { result = await handler(request); }
+  catch (error) { console.error(error); result = response({ error: error.status ? error.message : 'Server error' }, error.status || 500); }
+  const origin=request.headers.get('origin');
+  if(origin&&allowedOrigins.has(origin))result.headers.set('access-control-allow-origin',origin);
+  return result;
 } };
 
