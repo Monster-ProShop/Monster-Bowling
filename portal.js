@@ -33,6 +33,7 @@ import { createAuthClient } from 'https://esm.sh/@neondatabase/auth@0.5.0-beta?b
   }
 
   async function activeToken(attempts = 5) {
+    if (sessionToken) return sessionToken;
     let lastError = null;
     for (let attempt = 0; attempt < attempts; attempt++) {
       try {
