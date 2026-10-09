@@ -1,4 +1,4 @@
-import { uuid, validateState, mappedBracketGames } from './league-model.mjs';
+import { uuid, validateState, mappedBracketGames, validateLeagueConfiguration, generateLeagueSchedule } from './league-model.mjs';
 
 const issue = (message, status=400) => Object.assign(new Error(message), {status});
 const profilesFor = async (db, id) => (await db.query('select id,name,email,membership_number,handicap,active,claimed_user_id from public.bowling_roster_profiles where competition_id=$1 order by lower(name)', [id])).rows;
@@ -44,6 +44,35 @@ export async function leagueRoute({request,url,route,actor,pool,canManage,canAcc
       const row = (await pool.query('insert into public.bowling_roster_profiles(competition_id,name,email) values($1,$2,$3) returning id',[id,name,email||null])).rows[0];
       return response(row,201);
     }
+    if (route === '/league/configuration' && request.method === 'GET') {
+      const row=(await pool.query('select configuration,revision,updated_at from public.bowling_league_configurations where competition_id=$1',[id])).rows[0];
+      return response(row||{configuration:null,revision:0});
+    }
+    if (route === '/league/configuration' && request.method === 'POST') {
+      const configuration=validateLeagueConfiguration(body.configuration,await profilesFor(pool,id));
+      const row=(await pool.query(`insert into public.bowling_league_configurations(competition_id,configuration,updated_by) values($1,$2,$3)
+        on conflict(competition_id) do update set configuration=excluded.configuration,updated_by=excluded.updated_by,updated_at=now(),revision=bowling_league_configurations.revision+1
+        returning configuration,revision,updated_at`,[id,configuration,actor.id])).rows[0];
+      return response(row);
+    }
+    if (route === '/league/generate-schedule' && request.method === 'POST') {
+      const db=await pool.connect();
+      try{
+        await db.query('begin');
+        const saved=(await db.query('select configuration from public.bowling_league_configurations where competition_id=$1 for update',[id])).rows[0];
+        if(!saved)throw issue('Save the league configuration first');
+        const games=await db.query('select 1 from public.bowling_league_games where competition_id=$1 limit 1',[id]);
+        if(games.rowCount)throw issue('The schedule cannot be regenerated after scores have been entered',409);
+        const schedule=generateLeagueSchedule(saved.configuration);
+        await db.query('delete from public.bowling_league_sessions where competition_id=$1',[id]);
+        for(const week of schedule){
+          const state={config:{totalGames:saved.configuration.gamesPerBowler},teams:[],matches:week.matches};
+          await db.query(`insert into public.bowling_league_sessions(competition_id,label,session_date,state,week_number,position_round,created_by)
+            values($1,$2,$3,$4,$5,$6,$7)`,[id,week.label,week.date,state,week.number,week.positionRound,actor.id]);
+        }
+        await db.query('commit');return response({generated:schedule.length,schedule},201);
+      }catch(error){await db.query('rollback');throw error;}finally{db.release();}
+    }
     if (route === '/league/claim' && request.method === 'POST') {
       if (!uuid.test(String(body.profileId)) || body.confirm!==true) throw issue('Confirm your bowler selection');
       const rows = await pool.query(`update public.bowling_roster_profiles set claimed_user_id=$1,updated_at=now()
@@ -51,7 +80,7 @@ export async function leagueRoute({request,url,route,actor,pool,canManage,canAcc
       if (!rows.rowCount) throw issue('The bowler email must match your verified login. Ask your manager to correct the roster.',403);
       return response({linked:true});
     }
-    if (route === '/league/sessions' && request.method === 'GET') return response((await pool.query('select id,label,session_date,revision,brackets_linked from public.bowling_league_sessions where competition_id=$1 order by session_date desc,created_at desc',[id])).rows);
+    if (route === '/league/sessions' && request.method === 'GET') return response((await pool.query('select id,label,session_date,week_number,position_round,revision,brackets_linked from public.bowling_league_sessions where competition_id=$1 order by session_date,week_number',[id])).rows);
     if (route === '/league/sessions' && request.method === 'POST') {
       const label=String(body.label||'').trim();
       if (!label || label.length>120 || !/^\d{4}-\d{2}-\d{2}$/.test(body.date||'') || Number.isNaN(Date.parse(body.date))) throw issue('Enter a session name and date');
@@ -60,14 +89,24 @@ export async function leagueRoute({request,url,route,actor,pool,canManage,canAcc
       return response((await pool.query('insert into public.bowling_league_sessions(competition_id,label,session_date,created_by) values($1,$2,$3,$4) returning id',[id,label,body.date,actor.id])).rows[0],201);
     }
     if (route === '/league/summary' && request.method === 'GET') {
-      return response((await pool.query(`select p.id,p.name,count(*)::int games,sum(g.scratch)::int pinfall,round(avg(g.scratch),2) average,max(g.scratch) high_game
-        from public.bowling_league_games g join public.bowling_roster_profiles p on p.id=g.profile_id
-        where g.competition_id=$1 group by p.id,p.name order by avg(g.scratch) desc,sum(g.scratch) desc,p.name`,[id])).rows);
+      return response((await pool.query(`with rules as (
+          select coalesce((configuration#>>'{handicap,global,percent}')::numeric,90) pct,coalesce((configuration#>>'{handicap,global,base}')::numeric,220) base
+          from public.bowling_league_configurations where competition_id=$1
+        ), per_session as (
+          select profile_id,session_id,sum(scratch)::int series,count(*)::int series_games from public.bowling_league_games where competition_id=$1 group by profile_id,session_id
+        ), totals as (
+          select p.id,p.name,count(*)::int games,sum(g.scratch)::int pinfall,round(avg(g.scratch),2) average,max(g.scratch)::int high_game,max(ps.series)::int high_series,max(ps.series_games)::int series_games
+          from public.bowling_league_games g join public.bowling_roster_profiles p on p.id=g.profile_id join per_session ps on ps.profile_id=g.profile_id and ps.session_id=g.session_id
+          where g.competition_id=$1 group by p.id,p.name
+        ) select t.*,greatest(0,floor((coalesce(r.base,220)-t.average)*coalesce(r.pct,90)/100))::int handicap,
+          (t.high_game+greatest(0,floor((coalesce(r.base,220)-t.average)*coalesce(r.pct,90)/100)))::int high_game_handicap,
+          (t.high_series+greatest(0,floor((coalesce(r.base,220)-t.average)*coalesce(r.pct,90)/100))*t.series_games)::int high_series_handicap
+        from totals t left join rules r on true order by t.average desc,t.pinfall desc,t.name`,[id])).rows);
     }
     const sessionId=url.searchParams.get('session_id')||body.sessionId;
     if (!uuid.test(String(sessionId))) throw issue('Choose a session');
     if (route === '/league/session' && request.method === 'GET') {
-      const row=(await pool.query('select id,competition_id,label,session_date,state,revision,brackets_linked from public.bowling_league_sessions where id=$1 and competition_id=$2',[sessionId,id])).rows[0];
+      const row=(await pool.query('select id,competition_id,label,session_date,week_number,position_round,state,revision,brackets_linked from public.bowling_league_sessions where id=$1 and competition_id=$2',[sessionId,id])).rows[0];
       if (!row) throw issue('Session not found',404);
       const games=(await pool.query('select profile_id,game_number,scratch,source from public.bowling_league_games where session_id=$1',[sessionId])).rows;
       return response({...row,canManage:manager,games});
