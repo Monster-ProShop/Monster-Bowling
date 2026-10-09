@@ -11,7 +11,9 @@ import { createAuthClient } from 'https://esm.sh/@neondatabase/auth@0.5.0-beta?b
   const notice = message => { $('portalNotice').textContent = message;localize(); };
   const expiredNoticeVisible = () => /session expired|session has expired|sesi[oó]n expir[oó]/i.test($('portalNotice').textContent);
   const fail = error => notice(error?.message || String(error));
-  let client, user, role = 'user', admin = false, superAdmin = false, current = null, competitions = [], accessUsers = [], permanentRoster = [], rosterCompetition = null, pendingRosterPreview = null, saveJob = null, saving = false, verificationEmail = '', reauth = false, sessionExpired = false, needsSessionReset = false, lastEmail = '';
+  const authKey = 'prodrillos-auth-session';
+  const savedAuth = () => { try { return JSON.parse(sessionStorage.getItem(authKey) || 'null'); } catch { return null; } };
+  let client, user, sessionToken = savedAuth()?.token || null, role = 'user', admin = false, superAdmin = false, current = null, competitions = [], accessUsers = [], permanentRoster = [], rosterCompetition = null, pendingRosterPreview = null, saveJob = null, saving = false, verificationEmail = '', reauth = false, sessionExpired = false, needsSessionReset = false, lastEmail = '';
   const updateAuthButton = () => {
     $('portalLogin').textContent = user && !sessionExpired ? 'Log out' : 'Log in';
     $('portalLogin').classList.remove('hidden');
@@ -34,7 +36,7 @@ import { createAuthClient } from 'https://esm.sh/@neondatabase/auth@0.5.0-beta?b
     let lastError = null;
     for (let attempt = 0; attempt < attempts; attempt++) {
       try {
-        const response = await fetch(cfg.authUrl + '/token', {credentials: 'include', cache: 'no-store'});
+        const response = await fetch(cfg.authUrl + '/token', {credentials: 'include', cache: 'no-store', headers: sessionToken ? {authorization: 'Bearer ' + sessionToken} : {}});
         const data = await response.json();
         if (response.ok && data?.token) return data.token;
       } catch (error) {
@@ -48,6 +50,7 @@ import { createAuthClient } from 'https://esm.sh/@neondatabase/auth@0.5.0-beta?b
       if (restored.data?.user) user = restored.data.user;
       if (attempt < attempts - 1) await new Promise(resolve => setTimeout(resolve, 150 * (attempt + 1)));
     }
+    if (sessionToken) return sessionToken;
     throw lastError || new Error('Session expired. Sign in again.');
   }
 
@@ -518,7 +521,8 @@ import { createAuthClient } from 'https://esm.sh/@neondatabase/auth@0.5.0-beta?b
         if (error) throw error;
         needsSessionReset = false;
         $('loginPassword').value = '';
-        user = data.user;
+        user = data.user;sessionToken=data?.token||data?.session?.token||sessionToken;
+        if(user&&sessionToken)sessionStorage.setItem(authKey,JSON.stringify({user,token:sessionToken}));
         await activeToken();
         const requestedType=localStorage.getItem('pending-account-type');
         if(requestedType){await api('/account/setup','POST',{accountType:requestedType});localStorage.removeItem('pending-account-type');}
@@ -596,6 +600,7 @@ import { createAuthClient } from 'https://esm.sh/@neondatabase/auth@0.5.0-beta?b
       if (user && !sessionExpired) {
         await client.auth.signOut();
         sessionStorage.removeItem('dlr-auth-handoff');
+        sessionStorage.removeItem(authKey);sessionToken=null;
         user = null; role='user';admin = false;superAdmin=false; current = null; reauth = false; sessionExpired = false;
         updateAuthButton();
         await identify(null);
@@ -661,9 +666,10 @@ import { createAuthClient } from 'https://esm.sh/@neondatabase/auth@0.5.0-beta?b
       notice(resetError?'This password reset link is invalid or has expired. Request a new link.':'Choose a new password to finish resetting your account.');
       localize();return;
     }
-    const {data,error} = await client.auth.getSession();
+    const {data,error} = await client.auth.getSession(),saved=savedAuth();
     if (error) throw error;
-    await identify(data?.user);
+    user=data?.user||saved?.user||null;sessionToken=data?.session?.token||sessionToken||saved?.token||null;
+    await identify(user);
   }
   boot().catch(error => {
     // Session restoration can fail before an API request is made. Always recover

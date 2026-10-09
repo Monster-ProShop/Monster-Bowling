@@ -48,16 +48,23 @@ function resultsForViewer(results,state,canViewSummary=false) {
 async function identity(request) {
   const header = request.headers.get('authorization') || '';
   if (!header.toLowerCase().startsWith('bearer ')) return null;
-  const { payload } = await jwtVerify(header.slice(7), jwks, {
-    issuer: [authUrl, new URL(authUrl).origin]
-  });
-  if (payload.role !== 'authenticated' || !uuid.test(String(payload.sub))) return null;
+  const bearer=header.slice(7),parts=bearer.split('.');
+  let userId=null;
+  if(parts.length===3){
+    const { payload } = await jwtVerify(bearer, jwks, {issuer: [authUrl, new URL(authUrl).origin]});
+    if (payload.role !== 'authenticated' || !uuid.test(String(payload.sub))) return null;
+    userId=String(payload.sub);
+  }else{
+    const session=(await pool.query(`select "userId" from neon_auth.session where token=$1 and "expiresAt">now() limit 1`,[bearer])).rows[0];
+    if(!session?.userId)return null;
+    userId=String(session.userId);
+  }
   const result = await pool.query(`select u.email,u."emailVerified",coalesce(r.role,'user') role
-    from neon_auth."user" u left join public.bowling_user_roles r on r.user_id=u.id where u.id=$1`, [payload.sub]);
+    from neon_auth."user" u left join public.bowling_user_roles r on r.user_id=u.id where u.id=$1`, [userId]);
   const record = result.rows[0];
   if (!record?.emailVerified) return null;
   const email=record.email.toLowerCase(),role=email==='monsterproshop@outlook.com'?'superadmin':record.role;
-  return { id: payload.sub, email, role, admin:role==='superadmin' };
+  return { id: userId, email, role, admin:role==='superadmin' };
 }
 async function canManage(actor,competitionId) {
   if(actor.role==='superadmin')return true;
