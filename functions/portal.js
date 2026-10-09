@@ -202,6 +202,16 @@ async function handler(request) {
       'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS', 'vary': 'Origin' } });
   const url = new URL(request.url), route = url.pathname.replace(/\/$/, '') || '/';
   if (route === '/health' && request.method === 'GET') return response({ ok: true });
+  if(route==='/auth/sign-in'&&request.method==='POST'){
+    const body=await bodyJson(request),email=cleanText(body.email,254).toLowerCase(),password=typeof body.password==='string'?body.password:'';
+    if(!email||!password)return response({error:'Enter your email and password'},400);
+    const authResponse=await fetch(authUrl+'/sign-in/email',{method:'POST',headers:{'content-type':'application/json','origin':origin||siteOrigin},body:JSON.stringify({email,password})});
+    const data=await authResponse.json().catch(()=>({}));
+    if(!authResponse.ok)return response({error:data?.message||data?.error?.message||'Invalid email or password'},authResponse.status===429?429:401);
+    const token=data?.token||data?.session?.token||null;
+    if(!token||!data?.user)return response({error:'Neon did not return a usable session'},502);
+    return response({user:data.user,token});
+  }
   let actor = null;
   try { actor = await identity(request); }
   catch { return response({ error: 'Invalid or expired session' }, 401); }

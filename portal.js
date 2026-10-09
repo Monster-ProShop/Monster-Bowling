@@ -512,16 +512,11 @@ import { createAuthClient } from 'https://esm.sh/@neondatabase/auth@0.5.0-beta?b
       try {
         const email = $('loginEmail').value.trim().toLowerCase(), password = $('loginPassword').value;
         await resetExpiredSession();
-        let {data,error} = await client.auth.signIn.email({email,password});
-        if (error && /expired|session/i.test(error.message || String(error))) {
-          needsSessionReset = true;
-          await resetExpiredSession();
-          ({data,error} = await client.auth.signIn.email({email,password}));
-        }
-        if (error) throw error;
+        const authResponse=await fetch(cfg.apiUrl+'/auth/sign-in',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email,password})}),data=await authResponse.json();
+        if(!authResponse.ok)throw new Error(data.error||'Could not sign in');
         needsSessionReset = false;
         $('loginPassword').value = '';
-        user = data.user;sessionToken=data?.token||data?.session?.token||sessionToken;
+        user = data.user;sessionToken=data.token;
         if(user&&sessionToken)sessionStorage.setItem(authKey,JSON.stringify({user,token:sessionToken}));
         await activeToken();
         const requestedType=localStorage.getItem('pending-account-type');
