@@ -208,8 +208,10 @@ async function handler(request) {
     const authResponse=await fetch(authUrl+'/sign-in/email',{method:'POST',headers:{'content-type':'application/json','origin':origin||siteOrigin},body:JSON.stringify({email,password})});
     const data=await authResponse.json().catch(()=>({}));
     if(!authResponse.ok)return response({error:data?.message||data?.error?.message||'Invalid email or password'},authResponse.status===429?429:401);
-    const token=data?.token||data?.session?.token||null;
-    if(!token||!data?.user)return response({error:'Neon did not return a usable session'},502);
+    if(!data?.user?.id)return response({error:'Neon did not return a usable session'},502);
+    const activeSession=(await pool.query(`select token from neon_auth.session where "userId"=$1 and "expiresAt">now() order by "createdAt" desc limit 1`,[data.user.id])).rows[0];
+    const token=activeSession?.token||null;
+    if(!token)return response({error:'Neon did not create an active session'},502);
     return response({user:data.user,token});
   }
   let actor = null;
