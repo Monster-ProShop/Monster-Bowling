@@ -259,7 +259,7 @@ async function handler(request) {
       order by p.competition_id,(p.claimed_user_id=$1) desc,p.updated_at desc`,[actor.id]);
     const totals={totalGames:0,totalPinfall:0,moneyInvested:0,moneyWon:0,sessionsPlayed:0},totalGamesByPosition=[],byCompetition=[];
     for(const profile of profiles){
-      const item={id:profile.competition_id,name:profile.competition_name,games:0,pinfall:0,moneyInvested:0,moneyWon:0,sessionsPlayed:0},itemGamesByPosition=[];
+      const item={id:profile.competition_id,name:profile.competition_name,games:0,pinfall:0,moneyInvested:0,moneyWon:0,sessionsPlayed:0,highGameHandicap:0,highSeriesHandicap:0},itemGamesByPosition=[];
       const currentState=(await pool.query('select data from public.bowling_competition_state where competition_id=$1',[profile.competition_id])).rows[0]?.data||{};
       const currentResults=effectiveResults(currentState,(await pool.query('select data from public.bowling_results where competition_id=$1',[profile.competition_id])).rows[0]?.data||{});
       const currentBowler=findProfileBowler(currentState,profile);
@@ -277,12 +277,19 @@ async function handler(request) {
         item.games+=score.games;item.pinfall+=score.pinfall;addGameScores(itemGamesByPosition,score.byGame);item.moneyInvested+=money.invested;item.moneyWon+=money.won;
         if(score.games||money.invested||money.won)item.sessionsPlayed++;
       }
+      const league=(await pool.query(`with games as (select session_id,scratch from public.bowling_league_games where competition_id=$1 and profile_id=$2),
+        totals as (select count(*)::int games,coalesce(sum(scratch),0)::int pinfall,coalesce(max(scratch),0)::int high_game from games),
+        series as (select coalesce(max(total),0)::int high_series,coalesce(max(game_count),0)::int series_games from (select sum(scratch) total,count(*) game_count from games group by session_id) s),
+        rules as (select coalesce((configuration#>>'{handicap,global,percent}')::numeric,90) pct,coalesce((configuration#>>'{handicap,global,base}')::numeric,220) base from public.bowling_league_configurations where competition_id=$1)
+        select t.*,s.*,greatest(0,floor((coalesce(r.base,220)-(case when t.games>0 then t.pinfall::numeric/t.games else 0 end))*coalesce(r.pct,90)/100))::int handicap
+        from totals t cross join series s left join rules r on true`,[profile.competition_id,profile.id])).rows[0];
+      if(league?.games){item.games+=league.games;item.pinfall+=league.pinfall;item.sessionsPlayed+=(await pool.query('select count(distinct session_id)::int count from public.bowling_league_games where competition_id=$1 and profile_id=$2',[profile.competition_id,profile.id])).rows[0].count;item.highGameHandicap=league.high_game+league.handicap;item.highSeriesHandicap=league.high_series+league.handicap*league.series_games;}
       item.average=item.games?Number((item.pinfall/item.games).toFixed(2)):0;item.gameAverages=gameAverages(itemGamesByPosition);item.net=item.moneyWon-item.moneyInvested;
       totals.totalGames+=item.games;totals.totalPinfall+=item.pinfall;totals.moneyInvested+=item.moneyInvested;totals.moneyWon+=item.moneyWon;totals.sessionsPlayed+=item.sessionsPlayed;
       itemGamesByPosition.forEach((entry,index)=>{if(!entry)return;totalGamesByPosition[index]??={pinfall:0,games:0};totalGamesByPosition[index].pinfall+=entry.pinfall;totalGamesByPosition[index].games+=entry.games;});
       byCompetition.push(item);
     }
-    return response({...totals,average:totals.totalGames?Number((totals.totalPinfall/totals.totalGames).toFixed(2)):0,gameAverages:gameAverages(totalGamesByPosition),net:totals.moneyWon-totals.moneyInvested,competitions:byCompetition.sort((a,b)=>a.name.localeCompare(b.name))});
+    return response({...totals,average:totals.totalGames?Number((totals.totalPinfall/totals.totalGames).toFixed(2)):0,gameAverages:gameAverages(totalGamesByPosition),net:totals.moneyWon-totals.moneyInvested,highGameHandicap:Math.max(0,...byCompetition.map(i=>i.highGameHandicap||0)),highSeriesHandicap:Math.max(0,...byCompetition.map(i=>i.highSeriesHandicap||0)),competitions:byCompetition.sort((a,b)=>a.name.localeCompare(b.name))});
   }
   if(route==='/directory'&&request.method==='GET'){
     const q='%'+cleanText(url.searchParams.get('q')||'',120).toLowerCase()+'%';
