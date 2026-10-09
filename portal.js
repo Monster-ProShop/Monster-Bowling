@@ -33,6 +33,13 @@ import { createAuthClient } from 'https://esm.sh/@neondatabase/auth@0.5.0-beta?b
   async function activeToken(attempts = 5) {
     let lastError = null;
     for (let attempt = 0; attempt < attempts; attempt++) {
+      try {
+        const response = await fetch(cfg.authUrl + '/token', {credentials: 'include', cache: 'no-store'});
+        const data = await response.json();
+        if (response.ok && data?.token) return data.token;
+      } catch (error) {
+        lastError = error;
+      }
       const result = await client.auth.token();
       if (!result.error && result.data?.token) return result.data.token;
       lastError = result.error || lastError;
