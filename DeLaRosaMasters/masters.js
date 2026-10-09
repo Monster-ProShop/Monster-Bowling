@@ -1,4 +1,4 @@
-import { createClient } from 'https://esm.sh/@neondatabase/neon-js@0.7.0-beta?bundle';
+import { createAuthClient } from 'https://esm.sh/@neondatabase/auth@0.5.0-beta?bundle';
 
 const pageParams=new URLSearchParams(location.search),cfg=window.MONSTER_NEON||{},DEFAULT_NAME='De La Rosa Masters',FORMAT='delarosa-masters-v1',requestedCompetition=pageParams.get('competition'),requestedSession=pageParams.get('session');
 let tournamentName=DEFAULT_NAME;
@@ -25,7 +25,7 @@ function translate(){document.documentElement.lang=language;$('language').value=
 function fresh(){return {format:FORMAT,language,saturdayLocked:false,config:{bracketBuyin:50,bracketFirst:250,bracketSecond:100,scratchBracketBuyin:50,scratchBracketFirst:250,scratchBracketSecond:100,satHighBuyin:50,satHighPayout:500,sunHighBuyin:50,sunHighPayout:500,doublesBuyin:50,doublesFirst:500,doublesSecond:300,doublesThird:200},bowlers:[],brackets:{satEarly:[],satLate:[],sunday:[],scratchEarly:[],scratchLate:[],scratchSunday:[]},teams:[],generated:false};}
 const blankBrackets=()=>Object.fromEntries(Object.keys(WINDOWS).map(key=>[key,[]]));
 function normalize(saved){const defaults=fresh();return{...defaults,...saved,language:saved.language||language,config:{...defaults.config,...saved.config},brackets:{...defaults.brackets,...saved.brackets},bowlers:(saved.bowlers||[]).map(b=>({...b,saturdayPaid:b.saturdayPaid??b.paid??false,sundayPaid:b.sundayPaid??false,events:{satEarly:0,satLate:0,sunday:0,scratchEarly:0,scratchLate:0,scratchSunday:0,satHigh:false,sunHigh:false,doubles:false,...b.events},scores:Array.from({length:7},(_,i)=>b.scores?.[i]??null)}))};}
-const newClient=()=>createClient(cfg.url,{auth:{persistSession:true,autoRefreshToken:true,fetchOptions:{credentials:'include',cache:'no-store'}}});
+const newClient=()=>({auth:createAuthClient(cfg.authUrl)});
 let client=newClient(),user=null,role='user',competition=null,state=fresh(),permanentRoster=[],editing=null,saveTimer=null,saving=false,queued=false,needsSessionReset=false,viewerDay='saturday',handoffToken=null;
 let archiveMode=false;
 function readAuthHandoff(){try{const saved=JSON.parse(sessionStorage.getItem('dlr-auth-handoff')||'null');if(!saved?.token||!saved?.user)return null;let encoded=saved.token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');encoded+='='.repeat((4-encoded.length%4)%4);const payload=JSON.parse(atob(encoded));if(Number(payload.exp||0)*1000<=Date.now()+5000){sessionStorage.removeItem('dlr-auth-handoff');return null;}return saved;}catch{return null;}}
