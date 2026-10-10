@@ -293,6 +293,35 @@ async function handler(request) {
     }
     return response({...totals,average:totals.totalGames?Number((totals.totalPinfall/totals.totalGames).toFixed(2)):0,gameAverages:gameAverages(totalGamesByPosition),net:totals.moneyWon-totals.moneyInvested,highGameHandicap:Math.max(0,...byCompetition.map(i=>i.highGameHandicap||0)),highSeriesHandicap:Math.max(0,...byCompetition.map(i=>i.highSeriesHandicap||0)),competitions:byCompetition.sort((a,b)=>a.name.localeCompare(b.name))});
   }
+  if(route==='/league-career-summary'&&request.method==='GET'){
+    const {rows:profiles}=await pool.query(`select distinct on (p.competition_id) p.id,p.competition_id,p.name,c.name competition_name
+      from public.bowling_roster_profiles p join public.bowling_competitions c on c.id=p.competition_id and c.kind='league'
+      left join public.bowling_user_bowler_links l on l.competition_id=p.competition_id and l.bowler_id=p.id::text and l.user_id=$1
+      where p.claimed_user_id=$1 or l.user_id=$1
+      order by p.competition_id,(p.claimed_user_id=$1) desc,p.updated_at desc`,[actor.id]);
+    const totals={totalGames:0,totalPinfall:0,moneyInvested:0,moneyWon:0,sessionsPlayed:0},totalGamesByPosition=[],byCompetition=[];
+    for(const profile of profiles){
+      const {rows:games}=await pool.query(`select g.session_id,g.game_number,g.scratch
+        from public.bowling_league_games g join public.bowling_league_sessions s on s.id=g.session_id and s.competition_id=g.competition_id
+        where g.competition_id=$1 and g.profile_id=$2 order by s.session_number,g.game_number`,[profile.competition_id,profile.id]);
+      if(!games.length)continue;
+      const pinfall=games.reduce((sum,g)=>sum+Number(g.scratch||0),0),average=pinfall/games.length;
+      const byGameNumber=[];for(const game of games){const position=Math.max(0,Number(game.game_number||1)-1);byGameNumber[position]??={pinfall:0,games:0};byGameNumber[position].pinfall+=Number(game.scratch||0);byGameNumber[position].games++;}
+      const config=(await pool.query(`select configuration from public.bowling_league_configurations where competition_id=$1`,[profile.competition_id])).rows[0]?.configuration||{};
+      const rule=config.handicap?.global||{},pct=Number(rule.percent??90),base=Number(rule.base??220),min=Number(rule.minHandicap??rule.minAverage??0),max=Number(rule.maxHandicap??rule.maxAverage??300);
+      const handicap=Math.max(min,Math.min(max,Math.floor((base-average)*pct/100))),series=new Map();
+      for(const game of games){const entry=series.get(game.session_id)||{pinfall:0,games:0};entry.pinfall+=Number(game.scratch||0);entry.games++;series.set(game.session_id,entry);}
+      const highSeries=[...series.values()].reduce((best,current)=>current.pinfall>best.pinfall?current:best,{pinfall:0,games:0});
+      const item={id:profile.competition_id,name:profile.competition_name,games:games.length,pinfall,average:Number(average.toFixed(2)),sessionsPlayed:series.size,
+        moneyInvested:0,moneyWon:0,net:0,gameAverages:gameAverages(byGameNumber),highGameHandicap:Math.max(...games.map(g=>Number(g.scratch||0)))+handicap,
+        highSeriesHandicap:highSeries.pinfall+handicap*highSeries.games};
+      totals.totalGames+=item.games;totals.totalPinfall+=item.pinfall;totals.sessionsPlayed+=item.sessionsPlayed;
+      byGameNumber.forEach((entry,index)=>{if(!entry)return;totalGamesByPosition[index]??={pinfall:0,games:0};totalGamesByPosition[index].pinfall+=entry.pinfall;totalGamesByPosition[index].games+=entry.games;});
+      byCompetition.push(item);
+    }
+    return response({...totals,average:totals.totalGames?Number((totals.totalPinfall/totals.totalGames).toFixed(2)):0,gameAverages:gameAverages(totalGamesByPosition),net:0,
+      highGameHandicap:Math.max(0,...byCompetition.map(i=>i.highGameHandicap||0)),highSeriesHandicap:Math.max(0,...byCompetition.map(i=>i.highSeriesHandicap||0)),competitions:byCompetition.sort((a,b)=>a.name.localeCompare(b.name))});
+  }
   if(route==='/directory'&&request.method==='GET'){
     const q='%'+cleanText(url.searchParams.get('q')||'',120).toLowerCase()+'%';
     const {rows}=await pool.query(`select id,name,kind,format,country,region,city,bowling_center from public.bowling_competitions
