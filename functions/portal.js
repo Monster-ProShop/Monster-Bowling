@@ -280,8 +280,10 @@ async function handler(request) {
       const league=(await pool.query(`with games as (select session_id,scratch from public.bowling_league_games where competition_id=$1 and profile_id=$2),
         totals as (select count(*)::int games,coalesce(sum(scratch),0)::int pinfall,coalesce(max(scratch),0)::int high_game from games),
         series as (select coalesce(max(total),0)::int high_series,coalesce(max(game_count),0)::int series_games from (select sum(scratch) total,count(*) game_count from games group by session_id) s),
-        rules as (select coalesce((configuration#>>'{handicap,global,percent}')::numeric,90) pct,coalesce((configuration#>>'{handicap,global,base}')::numeric,220) base from public.bowling_league_configurations where competition_id=$1)
-        select t.*,s.*,greatest(0,floor((coalesce(r.base,220)-(case when t.games>0 then t.pinfall::numeric/t.games else 0 end))*coalesce(r.pct,90)/100))::int handicap
+        rules as (select coalesce((configuration#>>'{handicap,global,percent}')::numeric,90) pct,coalesce((configuration#>>'{handicap,global,base}')::numeric,220) base,
+          coalesce((configuration#>>'{handicap,global,minHandicap}')::numeric,(configuration#>>'{handicap,global,minAverage}')::numeric,0) min_hcp,
+          coalesce((configuration#>>'{handicap,global,maxHandicap}')::numeric,(configuration#>>'{handicap,global,maxAverage}')::numeric,300) max_hcp from public.bowling_league_configurations where competition_id=$1)
+        select t.*,s.*,greatest(coalesce(r.min_hcp,0),least(coalesce(r.max_hcp,300),floor((coalesce(r.base,220)-(case when t.games>0 then t.pinfall::numeric/t.games else 0 end))*coalesce(r.pct,90)/100)))::int handicap
         from totals t cross join series s left join rules r on true`,[profile.competition_id,profile.id])).rows[0];
       if(league?.games){item.games+=league.games;item.pinfall+=league.pinfall;item.sessionsPlayed+=(await pool.query('select count(distinct session_id)::int count from public.bowling_league_games where competition_id=$1 and profile_id=$2',[profile.competition_id,profile.id])).rows[0].count;item.highGameHandicap=league.high_game+league.handicap;item.highSeriesHandicap=league.high_series+league.handicap*league.series_games;}
       item.average=item.games?Number((item.pinfall/item.games).toFixed(2)):0;item.gameAverages=gameAverages(itemGamesByPosition);item.net=item.moneyWon-item.moneyInvested;

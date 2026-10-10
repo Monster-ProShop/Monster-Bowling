@@ -26,11 +26,12 @@ test('invalid scores and duplicate bowlers are rejected',()=>{
 });
 test('multi-day De La Rosa needs explicit game mapping',()=>assert.throws(()=>mappedBracketGames({format:'delarosa-masters-v1'},[],new Set(),3)));
 
-const league={numberOfTeams:8,activeBowlers:4,substituteBowlers:2,numberOfSessions:9,gamesPerBowler:3,startLane:1,startDate:'2026-10-15',positionRounds:[8],points:{gameWin:1,gameTie:.5,seriesWin:1,seriesTie:.5},handicap:{global:{percent:90,base:220,minAverage:100,maxAverage:230}},finances:{costPerGame:40,prizeFundPerSession:25}};
+const league={numberOfTeams:8,activeBowlers:4,substituteBowlers:2,numberOfSessions:9,gamesPerBowler:3,startLane:1,startDate:'2026-10-15',positionRounds:[8],points:{gameWin:1,gameTie:.5,seriesWin:1,seriesTie:.5},handicap:{global:{percent:90,base:220,minHandicap:0,maxHandicap:100}},finances:{costPerGame:40,prizeFundPerSession:25}};
 test('league configuration enforces supported USBC team counts',()=>{
  assert.equal(validateLeagueConfiguration(league).numberOfTeams,8);
  assert.throws(()=>validateLeagueConfiguration({...league,numberOfTeams:7}),/even number/);
  assert.throws(()=>validateLeagueConfiguration({...league,numberOfTeams:50}),/between 4 and 48/);
+ assert.throws(()=>validateLeagueConfiguration({...league,handicap:{global:{percent:90,base:220,minHandicap:80,maxHandicap:40}}}),/cannot exceed/);
 });
 test('regular sessions rotate every team, opponent and lane pair',()=>{
  const schedule=generateLeagueSchedule(league), regular=schedule.slice(0,7);
