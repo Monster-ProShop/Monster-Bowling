@@ -69,7 +69,11 @@ export function validateLeagueConfiguration(input, profiles=[]) {
     seriesWin: money(points.seriesWin ?? 1,'Series win points'), seriesTie: money(points.seriesTie ?? .5,'Series tie points'),
     bonuses: (Array.isArray(points.bonuses)?points.bonuses:[]).map(b=>({concept:String(b.concept||'').trim(),points:money(b.points,'Bonus points')})).filter(b=>b.concept)
   };
-  const normalizeHandicap = rule => ({percent:whole(rule?.percent ?? 90,0,100,'Handicap percent'),base:whole(rule?.base ?? 220,0,300,'Handicap base'),minAverage:whole(rule?.minAverage ?? 0,0,300,'Minimum average'),maxAverage:whole(rule?.maxAverage ?? 300,0,300,'Maximum average')});
+  const normalizeHandicap = rule => {
+    const normalized={percent:whole(rule?.percent ?? 90,0,100,'Handicap percent'),base:whole(rule?.base ?? 220,0,300,'Handicap base'),minHandicap:whole(rule?.minHandicap ?? rule?.minAverage ?? 0,0,300,'Minimum handicap'),maxHandicap:whole(rule?.maxHandicap ?? rule?.maxAverage ?? 300,0,300,'Maximum handicap')};
+    if(normalized.minHandicap>normalized.maxHandicap)throw new Error('Minimum handicap cannot exceed maximum handicap');
+    return normalized;
+  };
   config.handicap = {global:normalizeHandicap(config.handicap?.global),divisions:{}};
   for (const name of config.bowlerDivisions) config.handicap.divisions[name]=normalizeHandicap(config.handicap?.divisions?.[name] || config.handicap.global);
   config.finances = {costPerGame:money(config.finances?.costPerGame,'Cost per game'),prizeFundPerSession:money(config.finances?.prizeFundPerSession,'Prize fund')};

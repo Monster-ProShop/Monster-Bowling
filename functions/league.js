@@ -90,7 +90,9 @@ export async function leagueRoute({request,url,route,actor,pool,canManage,canAcc
     }
     if (route === '/league/summary' && request.method === 'GET') {
       return response((await pool.query(`with rules as (
-          select coalesce((configuration#>>'{handicap,global,percent}')::numeric,90) pct,coalesce((configuration#>>'{handicap,global,base}')::numeric,220) base
+          select coalesce((configuration#>>'{handicap,global,percent}')::numeric,90) pct,coalesce((configuration#>>'{handicap,global,base}')::numeric,220) base,
+            coalesce((configuration#>>'{handicap,global,minHandicap}')::numeric,(configuration#>>'{handicap,global,minAverage}')::numeric,0) min_hcp,
+            coalesce((configuration#>>'{handicap,global,maxHandicap}')::numeric,(configuration#>>'{handicap,global,maxAverage}')::numeric,300) max_hcp
           from public.bowling_league_configurations where competition_id=$1
         ), per_session as (
           select profile_id,session_id,sum(scratch)::int series,count(*)::int series_games from public.bowling_league_games where competition_id=$1 group by profile_id,session_id
@@ -98,9 +100,9 @@ export async function leagueRoute({request,url,route,actor,pool,canManage,canAcc
           select p.id,p.name,count(*)::int games,sum(g.scratch)::int pinfall,round(avg(g.scratch),2) average,max(g.scratch)::int high_game,max(ps.series)::int high_series,max(ps.series_games)::int series_games
           from public.bowling_league_games g join public.bowling_roster_profiles p on p.id=g.profile_id join per_session ps on ps.profile_id=g.profile_id and ps.session_id=g.session_id
           where g.competition_id=$1 group by p.id,p.name
-        ) select t.*,greatest(0,floor((coalesce(r.base,220)-t.average)*coalesce(r.pct,90)/100))::int handicap,
-          (t.high_game+greatest(0,floor((coalesce(r.base,220)-t.average)*coalesce(r.pct,90)/100)))::int high_game_handicap,
-          (t.high_series+greatest(0,floor((coalesce(r.base,220)-t.average)*coalesce(r.pct,90)/100))*t.series_games)::int high_series_handicap
+        ) select t.*,greatest(coalesce(r.min_hcp,0),least(coalesce(r.max_hcp,300),floor((coalesce(r.base,220)-t.average)*coalesce(r.pct,90)/100)))::int handicap,
+          (t.high_game+greatest(coalesce(r.min_hcp,0),least(coalesce(r.max_hcp,300),floor((coalesce(r.base,220)-t.average)*coalesce(r.pct,90)/100))))::int high_game_handicap,
+          (t.high_series+greatest(coalesce(r.min_hcp,0),least(coalesce(r.max_hcp,300),floor((coalesce(r.base,220)-t.average)*coalesce(r.pct,90)/100)))*t.series_games)::int high_series_handicap
         from totals t left join rules r on true order by t.average desc,t.pinfall desc,t.name`,[id])).rows);
     }
     const sessionId=url.searchParams.get('session_id')||body.sessionId;
