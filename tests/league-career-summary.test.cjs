@@ -12,6 +12,8 @@ test('Tournaments career summary uses only scored league sessions',()=>{
   assert.match(route,/c\.kind='league'/);
   assert.match(route,/bowling_league_games/);
   assert.match(route,/bowling_league_sessions/);
+  assert.match(route,/s\.week_number nulls last/);
+  assert.doesNotMatch(route,/s\.session_number/);
   assert.match(route,/if\(!games\.length\)continue/);
   assert.doesNotMatch(route,/bowling_session_archives/);
   assert.doesNotMatch(route,/bowling_competition_state/);

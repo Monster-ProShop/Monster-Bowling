@@ -303,7 +303,7 @@ async function handler(request) {
     for(const profile of profiles){
       const {rows:games}=await pool.query(`select g.session_id,g.game_number,g.scratch
         from public.bowling_league_games g join public.bowling_league_sessions s on s.id=g.session_id and s.competition_id=g.competition_id
-        where g.competition_id=$1 and g.profile_id=$2 order by s.session_number,g.game_number`,[profile.competition_id,profile.id]);
+        where g.competition_id=$1 and g.profile_id=$2 order by s.week_number nulls last,s.session_date,g.game_number`,[profile.competition_id,profile.id]);
       if(!games.length)continue;
       const pinfall=games.reduce((sum,g)=>sum+Number(g.scratch||0),0),average=pinfall/games.length;
       const byGameNumber=[];for(const game of games){const position=Math.max(0,Number(game.game_number||1)-1);byGameNumber[position]??={pinfall:0,games:0};byGameNumber[position].pinfall+=Number(game.scratch||0);byGameNumber[position].games++;}
