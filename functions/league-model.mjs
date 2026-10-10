@@ -53,6 +53,8 @@ export function validateLeagueConfiguration(input, profiles=[]) {
   if (config.numberOfTeams % 2) throw new Error('USBC schedules require an even number of teams');
   config.activeBowlers = whole(config.activeBowlers, 1, 12, 'Active bowlers');
   config.substituteBowlers = whole(config.substituteBowlers ?? 0, 0, 24, 'Substitute bowlers');
+  config.bowlersPerTeam = whole(config.bowlersPerTeam ?? (config.activeBowlers+config.substituteBowlers),config.activeBowlers,36,'Bowlers per team');
+  if(config.activeBowlers+config.substituteBowlers>config.bowlersPerTeam)throw new Error('Active and substitute bowlers cannot exceed the team roster size');
   config.numberOfSessions = whole(config.numberOfSessions, 1, 60, 'Number of sessions');
   config.gamesPerBowler = whole(config.gamesPerBowler, 1, 12, 'Games per bowler');
   config.startLane = whole(config.startLane ?? 1, 1, 199, 'Starting lane');
